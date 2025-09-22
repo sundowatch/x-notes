@@ -116,13 +116,13 @@ Here's a glimpse of XNotes in both light and dark modes.
 ## Setup Files
 
 ### Linux
-- [xnotes_0.1.3.zip](https://github.com/sundowatch/x-notes/releases/download/note-tags/xnotes_0.1.3.zip) (ZIP Archive)
-- [xnotes_0.1.3_amd64.deb](https://github.com/sundowatch/x-notes/releases/download/note-tags/xnotes_0.1.3_amd64.deb) (Debian Package)
-- [XNotes-0.1.3.AppImage](https://github.com/sundowatch/x-notes/releases/download/note-tags/XNotes-0.1.3.AppImage) (AppImage)
+- [xnotes_0.1.4.zip](https://github.com/sundowatch/x-notes/releases/download/xnotes-0.1.4/XNotes-0.1.4.zip) (ZIP Archive)
+- [xnotes_0.1.4_amd64.deb](https://github.com/sundowatch/x-notes/releases/download/xnotes-0.1.4/xnotes_0.1.4_amd64.deb) (Debian Package)
+- [XNotes-0.1.4.AppImage](https://github.com/sundowatch/x-notes/releases/download/xnotes-0.1.4/XNotes-0.1.4.AppImage) (AppImage)
 
 ### Windows
-- [XNotes_Setup_0.1.3.exe](https://github.com/sundowatch/x-notes/releases/download/note-tags/XNotes_Setup_0.1.3.exe) (Windows Installer)
-- [XNotes 0.1.3.exe](https://github.com/sundowatch/x-notes/releases/download/note-tags/XNotes.0.1.3.exe) (Executable)
+- [XNotes Setu 0.1.4.exe](https://github.com/sundowatch/x-notes/releases/download/xnotes-0.1.4/XNotes.Setup.0.1.4.exe) (Windows Installer)
+- [XNotes 0.1.4.exe](https://github.com/sundowatch/x-notes/releases/download/xnotes-0.1.4/XNotes.0.1.4.exe) (Executable)
 
 ## Version History
 
