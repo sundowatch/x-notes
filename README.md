@@ -116,13 +116,13 @@ Here's a glimpse of XNotes in both light and dark modes.
 ## Setup Files
 
 ### Linux
-- [xnotes_0.1.2.zip](setup/linux/xnotes_0.1.2.zip) (ZIP Archive)
-- [xnotes_0.1.2_amd64.deb](setup/linux/xnotes_0.1.2_amd64.deb) (Debian Package)
-- [XNotes-0.1.2.AppImage](setup/linux/XNotes-0.1.2.AppImage) (AppImage)
+- [xnotes_0.1.2.zip](https://github.com/sundowatch/x-notes/releases/download/xnotes/xnotes_0.1.2.zip) (ZIP Archive)
+- [xnotes_0.1.2_amd64.deb](https://github.com/sundowatch/x-notes/releases/download/xnotes/xnotes_0.1.2_amd64.deb) (Debian Package)
+- [XNotes-0.1.2.AppImage](https://github.com/sundowatch/x-notes/releases/download/xnotes/XNotes-0.1.2.AppImage) (AppImage)
 
 ### Windows
-- [XNotes_Setup_0.1.2.exe](setup/windows/XNotes_Setup_0.1.2.exe) (Windows Installer)
-- [XNotes 0.1.2.exe](setup/windows/XNotes%200.1.2.exe) (Executable)
+- [XNotes_Setup_0.1.2.exe](https://github.com/sundowatch/x-notes/releases/download/xnotes/XNotes_Setup_0.1.2.exe) (Windows Installer)
+- [XNotes 0.1.2.exe](https://github.com/sundowatch/x-notes/releases/download/xnotes/XNotes.0.1.2.exe) (Executable)
 
 ## Version History
 
