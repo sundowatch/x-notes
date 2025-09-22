@@ -240,6 +240,20 @@ ipcMain.handle('create-note', async (event, { dirPath, name }) => {
     fs.writeFileSync(notePath, '<html><body></body></html>');
     console.log(`Note created at: ${notePath}`);
     
+    // Add the new note to the top of the order list
+    const orderConfig = fileManager.loadOrderConfig(dirPath);
+    const newFileName = path.basename(notePath);
+    
+    // Remove if already exists (shouldn't happen but just in case)
+    const existingIndex = orderConfig.order.indexOf(newFileName);
+    if (existingIndex !== -1) {
+      orderConfig.order.splice(existingIndex, 1);
+    }
+    
+    // Add to the beginning of the order list
+    orderConfig.order.unshift(newFileName);
+    fileManager.saveOrderConfig(dirPath, orderConfig);
+    
     return { path: notePath, success: true };
   } catch (error) {
     console.error('Error creating note:', error);
@@ -265,6 +279,20 @@ ipcMain.handle('create-directory', async (event, { parentDir, name }) => {
     
     fs.mkdirSync(dirPath, { recursive: true });
     console.log(`Directory created at: ${dirPath}`);
+    
+    // Add the new directory to the top of the order list
+    const orderConfig = fileManager.loadOrderConfig(parentDir);
+    const newFolderName = path.basename(dirPath);
+    
+    // Remove if already exists (shouldn't happen but just in case)
+    const existingIndex = orderConfig.order.indexOf(newFolderName);
+    if (existingIndex !== -1) {
+      orderConfig.order.splice(existingIndex, 1);
+    }
+    
+    // Add to the beginning of the order list
+    orderConfig.order.unshift(newFolderName);
+    fileManager.saveOrderConfig(parentDir, orderConfig);
     
     return { path: dirPath, success: true };
   } catch (error) {
