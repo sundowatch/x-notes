@@ -45,21 +45,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     ipcRenderer.on('app-closing', async () => {
       console.log('Application is closing, saving state...');
       
-      // Save expanded folders
-      const expandedFolders = saveExpandedState();
-      await ipcRenderer.invoke('save-expanded-folders', expandedFolders);
-      
-      // Save tab session (includes active tab info)
-      await saveTabSession();
-      
-      // Save current active tab as last opened note for fallback
-      if (activeTabIndex >= 0 && openTabs[activeTabIndex] && openTabs[activeTabIndex].path) {
-        const activeTab = openTabs[activeTabIndex];
-        console.log('Saving last opened note from active tab:', activeTab.path);
-        await ipcRenderer.invoke('save-last-opened-note', activeTab.path);
-      } else if (currentNotePath) {
-        console.log('Saving last opened note from current path:', currentNotePath);
-        await ipcRenderer.invoke('save-last-opened-note', currentNotePath);
+      try {
+        // Handle unsaved changes in all tabs
+        await handleUnsavedChangesOnExit();
+        
+        // Save expanded folders
+        const expandedFolders = saveExpandedState();
+        await ipcRenderer.invoke('save-expanded-folders', expandedFolders);
+        
+        // Save tab session (includes active tab info)
+        await saveTabSession();
+        
+        // Save current active tab as last opened note for fallback
+        if (activeTabIndex >= 0 && openTabs[activeTabIndex] && openTabs[activeTabIndex].path) {
+          const activeTab = openTabs[activeTabIndex];
+          console.log('Saving last opened note from active tab:', activeTab.path);
+          await ipcRenderer.invoke('save-last-opened-note', activeTab.path);
+        } else if (currentNotePath) {
+          console.log('Saving last opened note from current path:', currentNotePath);
+          await ipcRenderer.invoke('save-last-opened-note', currentNotePath);
+        }
+        
+        console.log('Application state saved successfully');
+      } catch (error) {
+        console.error('Error saving application state:', error);
       }
     });
     
@@ -67,6 +76,188 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Error initializing app:', error);
   }
 });
+
+// Handle unsaved changes when app is closing
+async function handleUnsavedChangesOnExit() {
+  console.log('handleUnsavedChangesOnExit called');
+  
+  // Update current tab's content first
+  if (activeTabIndex >= 0 && editor && openTabs[activeTabIndex]) {
+    const currentTab = openTabs[activeTabIndex];
+    currentTab.content = editor.getContents();
+    currentTab.hasUnsavedChanges = hasUnsavedChanges;
+    console.log('Updated current tab:', currentTab.title, 'has changes:', currentTab.hasUnsavedChanges, 'path:', currentTab.path);
+  }
+  
+  // Debug: log all open tabs
+  console.log('All open tabs:', openTabs.map(tab => ({
+    title: tab.title,
+    path: tab.path,
+    hasUnsavedChanges: tab.hasUnsavedChanges
+  })));
+  
+  // Find all tabs with unsaved changes
+  const allUnsavedTabs = openTabs.filter(tab => tab.hasUnsavedChanges);
+  
+  // Separate tabs with valid paths and tabs without paths (new notes)
+  const unsavedTabsWithPath = allUnsavedTabs.filter(tab => 
+    tab.path && 
+    tab.path !== 'undefined' && 
+    tab.path !== null && 
+    tab.path.trim() !== ''
+  );
+  
+  const newNotesWithoutPath = allUnsavedTabs.filter(tab => 
+    !tab.path || 
+    tab.path === 'undefined' || 
+    tab.path === null || 
+    tab.path.trim() === ''
+  );
+  
+  console.log('Filtered unsaved tabs with path:', unsavedTabsWithPath.map(tab => ({
+    title: tab.title,
+    path: tab.path,
+    hasUnsavedChanges: tab.hasUnsavedChanges
+  })));
+  
+  console.log('New notes without path:', newNotesWithoutPath.map(tab => ({
+    title: tab.title,
+    path: tab.path,
+    hasUnsavedChanges: tab.hasUnsavedChanges
+  })));
+  
+  const totalUnsavedTabs = unsavedTabsWithPath.length + newNotesWithoutPath.length;
+  
+  if (totalUnsavedTabs === 0) {
+    console.log('No unsaved changes to handle');
+    return;
+  }
+  
+  console.log('Found', totalUnsavedTabs, 'tabs with unsaved changes');
+  
+  // Handle new notes without path first (require Save As)
+  if (newNotesWithoutPath.length > 0) {
+    console.log('Found', newNotesWithoutPath.length, 'new notes that need to be saved with Save As');
+    
+    for (const tab of newNotesWithoutPath) {
+      const shouldSave = confirm(`"${tab.title}" is a new note that hasn't been saved yet. Do you want to save it?`);
+      
+      if (shouldSave) {
+        try {
+          console.log('User wants to save new note:', tab.title);
+          
+          // Get content
+          let htmlContent;
+          if (tab === openTabs[activeTabIndex] && editor) {
+            htmlContent = editor.root.innerHTML;
+          } else if (tab.content) {
+            const tempDiv = document.createElement('div');
+            const tempQuill = new Quill(tempDiv);
+            tempQuill.setContents(tab.content);
+            htmlContent = tempQuill.root.innerHTML;
+          }
+          
+          if (htmlContent) {
+            // Use Save As for new notes
+            const result = await ipcRenderer.invoke('save-note-as', htmlContent, tab.title);
+            if (result && result.path) {
+              tab.path = result.path;
+              tab.title = path.basename(result.path, '.html');
+              tab.hasUnsavedChanges = false;
+              console.log('Saved new note to:', result.path);
+            } else {
+              console.log('User cancelled save for new note:', tab.title);
+            }
+          }
+        } catch (error) {
+          console.error('Error saving new note:', tab.title, error);
+        }
+      } else {
+        console.log('User declined to save new note:', tab.title);
+      }
+    }
+  }
+  
+  // Handle existing notes with paths
+  if (unsavedTabsWithPath.length > 0) {
+    if (settings && settings.autoSave) {
+      // Auto save enabled: save all unsaved tabs automatically
+      console.log('Auto save enabled, saving', unsavedTabsWithPath.length, 'existing tabs...');
+      
+      for (const tab of unsavedTabsWithPath) {
+        try {
+          console.log('Trying to auto save tab:', tab.title, 'path:', tab.path);
+          let htmlContent;
+          
+          // If this is the active tab, get content from editor
+          if (tab === openTabs[activeTabIndex] && editor) {
+            htmlContent = editor.root.innerHTML;
+            console.log('Got content from active editor for tab:', tab.title);
+          } else if (tab.content) {
+            // For non-active tabs, convert Delta to HTML
+            const tempDiv = document.createElement('div');
+            const tempQuill = new Quill(tempDiv);
+            tempQuill.setContents(tab.content);
+            htmlContent = tempQuill.root.innerHTML;
+            console.log('Converted Delta to HTML for tab:', tab.title);
+          }
+          
+          if (htmlContent && tab.path) {
+            console.log('Saving tab:', tab.title, 'to path:', tab.path);
+            await ipcRenderer.invoke('save-note', tab.path, htmlContent);
+            tab.hasUnsavedChanges = false;
+            console.log('Auto saved tab on exit:', tab.title);
+          } else {
+            console.warn('Cannot save tab - missing content or path:', tab.title, 'hasContent:', !!htmlContent, 'hasPath:', !!tab.path);
+          }
+        } catch (error) {
+          console.error('Error auto saving tab on exit:', tab.title, error);
+        }
+      }
+    } else {
+      // Auto save disabled: ask for confirmation for each unsaved tab
+      console.log('Auto save disabled, asking for confirmation for', unsavedTabsWithPath.length, 'existing tabs...');
+      
+      for (const tab of unsavedTabsWithPath) {
+        console.log('Asking for manual save confirmation for tab:', tab.title, 'path:', tab.path);
+        const shouldSave = confirm(`Do you want to save changes to "${tab.title}"?`);
+        
+        if (shouldSave) {
+          try {
+            console.log('User confirmed save for tab:', tab.title);
+            let htmlContent;
+            
+            // If this is the active tab, get content from editor
+            if (tab === openTabs[activeTabIndex] && editor) {
+              htmlContent = editor.root.innerHTML;
+              console.log('Got content from active editor for tab:', tab.title);
+            } else if (tab.content) {
+              // For non-active tabs, convert Delta to HTML
+              const tempDiv = document.createElement('div');
+              const tempQuill = new Quill(tempDiv);
+              tempQuill.setContents(tab.content);
+              htmlContent = tempQuill.root.innerHTML;
+              console.log('Converted Delta to HTML for tab:', tab.title);
+            }
+            
+            if (htmlContent && tab.path) {
+              console.log('Saving tab:', tab.title, 'to path:', tab.path);
+              await ipcRenderer.invoke('save-note', tab.path, htmlContent);
+              tab.hasUnsavedChanges = false;
+              console.log('Manually saved tab on exit:', tab.title);
+            } else {
+              console.warn('Cannot save tab - missing content or path:', tab.title, 'hasContent:', !!htmlContent, 'hasPath:', !!tab.path);
+            }
+          } catch (error) {
+            console.error('Error saving tab on exit:', tab.title, error);
+          }
+        } else {
+          console.log('User declined to save tab:', tab.title);
+        }
+      }
+    }
+  }
+}
 
 // Initialize the application
 async function initializeApp() {
@@ -300,7 +491,11 @@ function initializeEditor() {
           // Start new timer
           autoSaveTimer = setTimeout(async () => {
             console.log('Auto save timer triggered');
-            if (hasUnsavedChanges && currentNotePath) {
+            
+            // Use active tab path instead of currentNotePath
+            const activeTab = openTabs[activeTabIndex];
+            if (hasUnsavedChanges && activeTab && activeTab.path) {
+              console.log('Auto saving active tab:', activeTab.title, 'path:', activeTab.path);
               await saveCurrentNote();
               
               // Show notification for auto-save
@@ -314,6 +509,10 @@ function initializeEditor() {
                   statusIndicator.classList.remove('visible');
                 }, 1500);
               }
+            } else if (hasUnsavedChanges && activeTab && !activeTab.path) {
+              console.log('Auto save skipped: active tab has no path (new note)');
+            } else {
+              console.log('Auto save skipped: no unsaved changes or no active tab');
             }
           }, AUTO_SAVE_DELAY);
         }
@@ -1549,13 +1748,16 @@ async function openNote(notePath) {
 
 // Save current note
 async function saveCurrentNote() {
-  if (!currentNotePath || !editor) {
-    console.warn('Cannot save note: missing path or editor');
+  // Use active tab instead of currentNotePath
+  const activeTab = openTabs[activeTabIndex];
+  
+  if (!activeTab || !activeTab.path || !editor) {
+    console.warn('Cannot save note: missing active tab, path or editor');
     return false;
   }
   
   try {
-    console.log('Saving note to:', currentNotePath);
+    console.log('Saving note to:', activeTab.path);
     let content = '';
     
     try {
@@ -1565,21 +1767,19 @@ async function saveCurrentNote() {
       console.error('Error getting editor content:', contentError);
       return false;
     }
-    
-    const result = await ipcRenderer.invoke('save-note', {
-      path: currentNotePath,
-      content: content
-    });
+
+    const result = await ipcRenderer.invoke('save-note', activeTab.path, content);
     
     if (result && result.success) {
       console.log('Note saved successfully');
       
       // Clear unsaved changes status
       hasUnsavedChanges = false;
+      activeTab.hasUnsavedChanges = false;
       
       // If there's unsaved content, remove it
-      if (unsavedContents[currentNotePath]) {
-        delete unsavedContents[currentNotePath];
+      if (unsavedContents[activeTab.path]) {
+        delete unsavedContents[activeTab.path];
       }
 
       // Update UI status
@@ -2215,8 +2415,14 @@ function initializeShortcuts() {
       e.preventDefault(); // Prevent default browser behavior
       console.log('Ctrl+S pressed: Save note');
       
-      if (currentNotePath && hasUnsavedChanges) {
+      // Use active tab for save operation
+      const activeTab = openTabs[activeTabIndex];
+      if (activeTab && activeTab.path && hasUnsavedChanges) {
         await saveCurrentNote();
+      } else if (activeTab && !activeTab.path) {
+        // This is a new note, trigger Save As
+        console.log('Ctrl+S on new note, triggering Save As');
+        // TODO: Implement Save As for new notes
       }
     }
 
@@ -3324,8 +3530,29 @@ async function switchToTab(tabIndex) {
   if (activeTabIndex !== -1 && activeTabIndex !== tabIndex && editor) {
     const currentTab = openTabs[activeTabIndex];
     if (currentTab) {
+      // Update tab with current editor content
       currentTab.content = editor.getContents();
       currentTab.hasUnsavedChanges = hasUnsavedChanges;
+      
+      // Auto save current tab immediately if auto save is enabled and there are changes
+      if (settings && settings.autoSave && currentTab.hasUnsavedChanges && currentTab.path) {
+        console.log('Auto saving tab before switch:', currentTab.title);
+        try {
+          // Clear any pending auto save timer
+          if (autoSaveTimer) {
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = null;
+          }
+          
+          // Save immediately using the current tab's content
+          const htmlContent = editor.root.innerHTML;
+          await ipcRenderer.invoke('save-note', currentTab.path, htmlContent);
+          currentTab.hasUnsavedChanges = false;
+          console.log('Tab auto saved successfully:', currentTab.title);
+        } catch (error) {
+          console.error('Error auto saving tab:', error);
+        }
+      }
     }
   }
   
