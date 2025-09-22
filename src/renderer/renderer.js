@@ -604,12 +604,12 @@ function initializeButtons() {
   // Create button
   const createBtn = document.getElementById('create-btn');
   const createNameInput = document.getElementById('create-name');
-  const createLocationSelect = document.getElementById('create-location');
+  const locationDisplay = document.getElementById('location-display');
   
   // New content creation function - separate function for reusability
   const createNewItem = async () => {
     let name = createNameInput.value.trim();
-    const location = createLocationSelect.value;
+    const location = locationDisplay.dataset.selectedPath || noteTree.path;
     
     // If no name provided, use default name based on type
     if (!name) {
@@ -673,9 +673,9 @@ function initializeButtons() {
     });
   }
   
-  // Add keyboard event to select field as well
-  if (createLocationSelect) {
-    createLocationSelect.addEventListener('keydown', async (e) => {
+  // Add keyboard event to location display as well
+  if (locationDisplay) {
+    locationDisplay.addEventListener('keydown', async (e) => {
       if (e.key === 'Enter') {
         // Enter key: Create
         e.preventDefault();
@@ -1124,12 +1124,12 @@ async function createNewItemInDirectory(dirPath, type) {
   // Populate location select and set the target directory
   populateLocationSelect();
   
-  // Set the target directory as selected
-  for (let option of createLocationSelect.options) {
-    if (option.value === dirPath) {
-      createLocationSelect.value = dirPath;
-      break;
-    }
+  // Set the target directory as selected using the new system
+  const locationDisplay = document.getElementById('location-display');
+  const locationTree = document.getElementById('location-tree');
+  
+  if (locationDisplay && locationTree) {
+    selectAndExpandToPath(dirPath, locationTree, locationDisplay);
   }
   
   // Set default name based on type
@@ -1808,16 +1808,19 @@ async function saveCurrentNote() {
   }
 }
 
-// Populate location select in create modal
+// Populate location selector in create modal with tree view
 function populateLocationSelect() {
   if (!noteTree) {
     console.error('Note tree not loaded');
     return;
   }
   
-  const createLocationSelect = document.getElementById('create-location');
-  if (!createLocationSelect) {
-    console.error('Location select element not found');
+  const locationDisplay = document.getElementById('location-display');
+  const locationDropdown = document.getElementById('location-dropdown');
+  const locationTree = document.getElementById('location-tree');
+  
+  if (!locationDisplay || !locationDropdown || !locationTree) {
+    console.error('Location selector elements not found');
     return;
   }
   
@@ -1826,52 +1829,223 @@ function populateLocationSelect() {
     createNameInput.value = 'New Note'; // Default name
   }
   
-  createLocationSelect.innerHTML = '';
+  // Clear previous content
+  locationTree.innerHTML = '';
   
-  // Add root directory option
-  const rootOption = document.createElement('option');
-  rootOption.value = noteTree.path;
-  rootOption.textContent = 'XNotes';
-  createLocationSelect.appendChild(rootOption);
+  // Initialize dropdown functionality
+  initializeLocationDropdown(locationDisplay, locationDropdown);
   
-  // Add all directories recursively
-  addDirectoriesToSelect(noteTree, 1);
+  // Build tree structure
+  buildLocationTree(noteTree, locationTree, 0);
   
-  // Set active directory as selected if available
+  // Set default selection based on active directory or current note path
+  let targetPath = null;
   if (activeDirectoryPath) {
-    for (let i = 0; i < createLocationSelect.options.length; i++) {
-      if (createLocationSelect.options[i].value === activeDirectoryPath) {
-        createLocationSelect.selectedIndex = i;
-        break;
-      }
-    }
+    targetPath = activeDirectoryPath;
   } else if (currentNotePath) {
-    // If no active directory but we have an open note, use its directory
-    const noteDir = currentNotePath.substring(0, currentNotePath.lastIndexOf('/'));
-    for (let i = 0; i < createLocationSelect.options.length; i++) {
-      if (createLocationSelect.options[i].value === noteDir) {
-        createLocationSelect.selectedIndex = i;
-        break;
-      }
+    targetPath = currentNotePath.substring(0, currentNotePath.lastIndexOf('/'));
+  } else {
+    targetPath = noteTree.path; // Default to root
+  }
+  
+  // Select and expand to target path
+  if (targetPath) {
+    selectAndExpandToPath(targetPath, locationTree, locationDisplay);
+  } else {
+    // Default selection to root
+    const locationText = locationDisplay.querySelector('.location-text');
+    if (locationText) {
+      locationText.textContent = 'XNotes';
+      locationDisplay.dataset.selectedPath = noteTree.path;
+    }
+  }
+}
+
+// Initialize location dropdown functionality
+function initializeLocationDropdown(display, dropdown) {
+  // Click handler for display
+  display.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isActive = display.classList.contains('active');
+    
+    if (isActive) {
+      closeLocationDropdown(display, dropdown);
+    } else {
+      openLocationDropdown(display, dropdown);
+    }
+  });
+  
+  // Click outside to close
+  document.addEventListener('click', (e) => {
+    if (!display.contains(e.target) && !dropdown.contains(e.target)) {
+      closeLocationDropdown(display, dropdown);
+    }
+  });
+  
+  // Prevent dropdown close when clicking inside
+  dropdown.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+}
+
+// Open location dropdown
+function openLocationDropdown(display, dropdown) {
+  display.classList.add('active');
+  dropdown.classList.add('show');
+}
+
+// Close location dropdown
+function closeLocationDropdown(display, dropdown) {
+  display.classList.remove('active');
+  dropdown.classList.remove('show');
+}
+
+// Build location tree recursively
+function buildLocationTree(node, container, level) {
+  if (node.type !== 'directory') return;
+  
+  // Create tree item
+  const itemEl = document.createElement('div');
+  itemEl.className = 'location-tree-item';
+  itemEl.dataset.path = node.path;
+  itemEl.dataset.name = node.name;
+  
+  // Check if has children directories
+  const hasChildren = node.children && node.children.some(child => child.type === 'directory');
+  if (hasChildren) {
+    itemEl.classList.add('has-children');
+  }
+  
+  // Create expander
+  const expanderEl = document.createElement('div');
+  expanderEl.className = 'location-tree-expander';
+  if (!hasChildren) {
+    expanderEl.classList.add('empty');
+  }
+  
+  if (hasChildren) {
+    expanderEl.innerHTML = `
+      <svg class="location-tree-arrow" viewBox="0 0 24 24">
+        <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+      </svg>
+    `;
+    
+    expanderEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleLocationTreeItem(itemEl);
+    });
+  }
+  
+  // Create icon
+  const iconEl = document.createElement('div');
+  iconEl.innerHTML = `
+    <svg class="location-tree-icon" viewBox="0 0 24 24">
+      <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z"/>
+    </svg>
+  `;
+  
+  // Create name
+  const nameEl = document.createElement('div');
+  nameEl.className = 'location-tree-name';
+  nameEl.textContent = node.path === noteTree.path ? 'XNotes' : node.name;
+  
+  // Add click handler for selection
+  itemEl.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectLocationTreeItem(itemEl);
+  });
+  
+  // Assemble item
+  itemEl.appendChild(expanderEl);
+  itemEl.appendChild(iconEl);
+  itemEl.appendChild(nameEl);
+  container.appendChild(itemEl);
+  
+  // Create children container if has children
+  if (hasChildren) {
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'location-tree-children';
+    container.appendChild(childrenEl);
+    
+    // Add children
+    node.children
+      .filter(child => child.type === 'directory')
+      .forEach(child => {
+        buildLocationTree(child, childrenEl, level + 1);
+      });
+  }
+}
+
+// Toggle location tree item expansion
+function toggleLocationTreeItem(itemEl) {
+  const isExpanded = itemEl.classList.contains('expanded');
+  
+  if (isExpanded) {
+    itemEl.classList.remove('expanded');
+  } else {
+    itemEl.classList.add('expanded');
+  }
+}
+
+// Select location tree item
+function selectLocationTreeItem(itemEl) {
+  const locationDisplay = document.getElementById('location-display');
+  const locationDropdown = document.getElementById('location-dropdown');
+  const locationText = locationDisplay.querySelector('.location-text');
+  
+  // Remove previous selection
+  document.querySelectorAll('.location-tree-item.selected').forEach(el => {
+    el.classList.remove('selected');
+  });
+  
+  // Add selection to clicked item
+  itemEl.classList.add('selected');
+  
+  // Update display
+  const itemName = itemEl.dataset.name;
+  const itemPath = itemEl.dataset.path;
+  
+  locationText.textContent = itemName;
+  locationDisplay.dataset.selectedPath = itemPath;
+  
+  // Close dropdown
+  closeLocationDropdown(locationDisplay, locationDropdown);
+}
+
+// Select and expand to specific path
+function selectAndExpandToPath(targetPath, treeContainer, display) {
+  // Find all path segments
+  const pathSegments = [];
+  let currentPath = targetPath;
+  
+  while (currentPath && currentPath !== noteTree.path) {
+    pathSegments.unshift(currentPath);
+    const lastSlash = currentPath.lastIndexOf('/');
+    if (lastSlash > 0) {
+      currentPath = currentPath.substring(0, lastSlash);
+    } else {
+      break;
     }
   }
   
-  function addDirectoriesToSelect(node, level) {
-    if (node.type !== 'directory') return;
-    
-    if (node.path !== noteTree.path) {
-      const option = document.createElement('option');
-      option.value = node.path;
-      option.textContent = '─'.repeat(level) + ' ' + node.name;
-      createLocationSelect.appendChild(option);
+  // Add root path
+  pathSegments.unshift(noteTree.path);
+  
+  // Expand all parent folders
+  pathSegments.forEach((segmentPath, index) => {
+    const itemEl = treeContainer.querySelector(`[data-path="${segmentPath}"]`);
+    if (itemEl) {
+      // Expand if not the target (last item)
+      if (index < pathSegments.length - 1 && itemEl.classList.contains('has-children')) {
+        itemEl.classList.add('expanded');
+      }
+      
+      // Select if this is the target
+      if (segmentPath === targetPath) {
+        selectLocationTreeItem(itemEl);
+      }
     }
-    
-    if (node.children) {
-      node.children
-        .filter(child => child.type === 'directory')
-        .forEach(child => addDirectoriesToSelect(child, level + 1));
-    }
-  }
+  });
 }
 
 // Update settings form with current settings
