@@ -174,7 +174,7 @@ ipcMain.handle('read-note', async (event, filePath) => {
 });
 
 // Save note content
-ipcMain.handle('save-note', async (event, { path: filePath, content }) => {
+ipcMain.handle('save-note', async (event, filePath, content) => {
   console.log('Saving note to path:', filePath);
   
   try {

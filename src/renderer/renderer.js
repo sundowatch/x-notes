@@ -2632,9 +2632,9 @@ async function handleDelete(node, isDirectory) {
   let message;
   
   if (isDirectory) {
-    message = `Bu klasörü ve içindeki tüm notları silmek istediğinizden emin misiniz?\n\n"${node.name}" klasörü ve içeriği kalıcı olarak silinecek.`;
+    message = `Are you sure you want to delete this folder and all its notes?\n\nThe folder "${node.name}" and its contents will be permanently deleted.`;
   } else {
-    message = `"${node.name.replace('.html', '')}" notunu silmek istediğinizden emin misiniz?`;
+    message = `Are you sure you want to delete the note "${node.name.replace('.html', '')}"?`;
   }
   
   if (confirm(message)) {
