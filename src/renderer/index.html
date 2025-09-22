@@ -95,6 +95,32 @@
 
     <!-- Content Area -->
     <div class="content">
+      <!-- Tab Bar -->
+      <div class="tab-bar" id="tab-bar">
+        <div class="tab-scroll-container">
+          <div class="tab-list" id="tab-list">
+            <!-- Tabs will be dynamically added here -->
+          </div>
+        </div>
+        <div class="tab-controls">
+          <button class="tab-scroll-btn tab-scroll-left" id="tab-scroll-left" title="Scroll tabs left">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M8 2L4 6l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="tab-scroll-btn tab-scroll-right" id="tab-scroll-right" title="Scroll tabs right">
+            <svg width="12" height="12" viewBox="0 0 12 12">
+              <path d="M4 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="new-tab-btn" id="new-tab-btn" title="New tab">
+            <svg width="14" height="14" viewBox="0 0 14 14">
+              <path d="M7 3v8M3 7h8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      
       <div class="editor-container">
         <div class="editor-actions">
           <span class="note-creation-date" id="note-creation-date"></span>
@@ -230,22 +256,13 @@
 
   <!-- Context Menu -->
   <div id="context-menu" class="context-menu">
-    <div class="context-menu-header">
-      <span id="context-item-name">Item</span>
-      <span id="context-item-type">folder</span>
-    </div>
+    
     <ul class="context-menu-list">
-      <li id="ctx-new-note" class="context-menu-item">
+      <li id="ctx-open-new-tab" class="context-menu-item">
         <svg class="context-menu-icon" viewBox="0 0 24 24">
-          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+          <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z" />
         </svg>
-        <span>New Note</span>
-      </li>
-      <li id="ctx-new-folder" class="context-menu-item">
-        <svg class="context-menu-icon" viewBox="0 0 24 24">
-          <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
-        </svg>
-        <span>New Folder</span>
+        <span>Open in New Tab</span>
       </li>
       <li class="context-menu-divider"></li>
       <li id="ctx-rename" class="context-menu-item">
@@ -265,6 +282,19 @@
           <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" />
         </svg>
         <span>Delete</span>
+      </li>
+      <li class="context-menu-divider"></li>
+      <li id="ctx-new-note" class="context-menu-item">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+        </svg>
+        <span>New Note</span>
+      </li>
+      <li id="ctx-new-folder" class="context-menu-item">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+        </svg>
+        <span>New Folder</span>
       </li>
       <li class="context-menu-divider"></li>
       <li class="context-menu-item color-section">

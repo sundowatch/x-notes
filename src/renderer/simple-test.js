@@ -23,6 +23,12 @@ let unsavedContents = {}; // Store unsaved notes
 let autoSaveTimer = null; // Timer for auto-save
 const AUTO_SAVE_DELAY = 2500; // 2.5 seconds auto-save delay
 
+// Tab system variables
+let openTabs = []; // Array of open tabs
+let activeTabIndex = -1; // Index of currently active tab
+let nextTabId = 1; // Auto-increment ID for tabs
+let originalOpenNote = null; // Reference to original openNote function
+
 // Context menu variables
 let contextMenu = null;
 let contextTarget = null; // Currently selected item for context menu
@@ -43,9 +49,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       const expandedFolders = saveExpandedState();
       await ipcRenderer.invoke('save-expanded-folders', expandedFolders);
       
-      // Save current note as last opened note
-      if (currentNotePath) {
-        console.log('Saving last opened note on close:', currentNotePath);
+      // Save tab session (includes active tab info)
+      await saveTabSession();
+      
+      // Save current active tab as last opened note for fallback
+      if (activeTabIndex >= 0 && openTabs[activeTabIndex] && openTabs[activeTabIndex].path) {
+        const activeTab = openTabs[activeTabIndex];
+        console.log('Saving last opened note from active tab:', activeTab.path);
+        await ipcRenderer.invoke('save-last-opened-note', activeTab.path);
+      } else if (currentNotePath) {
+        console.log('Saving last opened note from current path:', currentNotePath);
         await ipcRenderer.invoke('save-last-opened-note', currentNotePath);
       }
     });
@@ -91,11 +104,19 @@ async function initializeApp() {
   // Initialize keyboard shortcuts
   initializeShortcuts();
   
+  // Initialize tab system
+  initializeTabSystem();
+  
   // Load notes
   await loadNotes();
   
-  // Open last opened note if available
-  await openLastOpenedNote();
+  // Load tab session
+  await loadTabSession();
+  
+  // Open last opened note only if no tabs are loaded and no session exists
+  if (openTabs.length === 0 && (!settings || !settings.tabSession)) {
+    await openLastOpenedNote();
+  }
 }
 
 // Open the last opened note automatically
@@ -589,6 +610,7 @@ function initializeContextMenu() {
   // Context menu event handlers
   const renameEl = document.getElementById('ctx-rename');
   const duplicateEl = document.getElementById('ctx-duplicate');
+  const openNewTabEl = document.getElementById('ctx-open-new-tab');
   const deleteEl = document.getElementById('ctx-delete');
   const newNoteEl = document.getElementById('ctx-new-note');
   const newFolderEl = document.getElementById('ctx-new-folder');
@@ -605,6 +627,13 @@ function initializeContextMenu() {
     console.log('Duplicate handler added');
   } else {
     console.error('ctx-duplicate element not found');
+  }
+  
+  if (openNewTabEl) {
+    openNewTabEl.addEventListener('click', handleContextOpenNewTab);
+    console.log('Open new tab handler added');
+  } else {
+    console.error('ctx-open-new-tab element not found');
   }
   
   if (deleteEl) {
@@ -678,11 +707,17 @@ function showContextMenu(e, target) {
   // Show/hide relevant menu items based on item type
   const isFolder = target.dataset.type === 'directory';
   const duplicateItem = document.getElementById('ctx-duplicate');
+  const openNewTabItem = document.getElementById('ctx-open-new-tab');
   const colorSection = document.querySelector('.color-section');
   
   // Only show duplicate option for notes
   if (duplicateItem) {
     duplicateItem.style.display = isFolder ? 'none' : 'flex';
+  }
+  
+  // Only show "Open in New Tab" option for notes
+  if (openNewTabItem) {
+    openNewTabItem.style.display = isFolder ? 'none' : 'flex';
   }
   
   // Show color picker for both folders and notes
@@ -751,6 +786,25 @@ function handleContextDuplicate() {
   
   if (notePath) {
     duplicateNote(notePath);
+  }
+}
+
+function handleContextOpenNewTab() {
+  console.log('handleContextOpenNewTab called, contextTarget:', contextTarget);
+  if (!contextTarget) return;
+  
+  // Get required data before hiding menu
+  const notePath = contextTarget.dataset.path;
+  const isDirectory = contextTarget.dataset.type === 'directory';
+  
+  hideContextMenu();
+  
+  // Only open notes in new tab, not directories
+  if (notePath && !isDirectory) {
+    openNoteInTab(notePath, true);
+    console.log('Opened note in new tab:', notePath);
+  } else if (isDirectory) {
+    showStatusMessage('Cannot open folder in tab', 'warning');
   }
 }
 
@@ -1217,8 +1271,45 @@ function createTreeElement(node) {
       // Add active class only to clicked element
       noteEl.classList.add('active');
       
-      console.log('Note clicked, activating:', node.path);
-      await openNote(node.path);
+      console.log('Note clicked, opening in current tab:', node.path);
+      
+      // Check if note is already open in a tab
+      const existingTabIndex = openTabs.findIndex(tab => tab.path === node.path);
+      
+      if (existingTabIndex !== -1) {
+        // Switch to existing tab
+        await switchToTab(existingTabIndex);
+      } else {
+        // Open in current active tab (replace current content)
+        if (activeTabIndex >= 0 && openTabs[activeTabIndex]) {
+          // Update current tab with new note
+          const currentTab = openTabs[activeTabIndex];
+          currentTab.path = node.path;
+          currentTab.title = node.name.replace('.html', '');
+          currentTab.hasUnsavedChanges = false;
+          
+          // Load the note content
+          await originalOpenNote(node.path);
+          
+          // Update tab bar to reflect changes
+          updateTabBar();
+          saveTabSession();
+        } else {
+          // No active tab, create new one
+          await openNoteInTab(node.path, true);
+        }
+      }
+    });
+    
+    // Add middle mouse button handler for opening in new tab
+    noteEl.addEventListener('mousedown', async (e) => {
+      if (e.button === 1) { // Middle mouse button
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('Middle mouse button clicked on note:', node.path);
+        openNoteInTab(node.path, true);
+      }
     });
     
     // Add rename functionality
@@ -2830,3 +2921,822 @@ function setupDragAndDrop() {
 document.addEventListener('DOMContentLoaded', () => {
   setupDragAndDrop();
 });
+
+// ==================== TAB SYSTEM ====================
+
+// Global drag state for tab reordering
+let globalDragState = {
+  isMouseDown: false,
+  isDragging: false,
+  dragStartX: 0,
+  dragStartY: 0,
+  draggedTab: null,
+  draggedIndex: -1
+};
+
+const DRAG_THRESHOLD = 5; // minimum pixels to start drag
+
+// Global mouse handlers for tab dragging
+function handleGlobalMouseMove(e) {
+  if (!globalDragState.isMouseDown || !globalDragState.draggedTab) return;
+  
+  const deltaX = Math.abs(e.clientX - globalDragState.dragStartX);
+  const deltaY = Math.abs(e.clientY - globalDragState.dragStartY);
+  
+  console.log('Global mouse move - deltaX:', deltaX, 'deltaY:', deltaY);
+  
+  if (!globalDragState.isDragging && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+    globalDragState.isDragging = true;
+    globalDragState.draggedTab.classList.add('dragging');
+    
+    // Create a visual clone that follows the mouse
+    const tabRect = globalDragState.draggedTab.getBoundingClientRect();
+    globalDragState.draggedTab.style.position = 'relative';
+    globalDragState.draggedTab.style.zIndex = '1000';
+    globalDragState.draggedTab.style.pointerEvents = 'none';
+    
+    console.log('Started dragging tab:', globalDragState.draggedIndex, 'deltaX:', deltaX);
+  }
+  
+  if (globalDragState.isDragging) {
+    // Move the tab with the mouse
+    const offsetX = e.clientX - globalDragState.dragStartX;
+    const offsetY = e.clientY - globalDragState.dragStartY;
+    
+    globalDragState.draggedTab.style.transform = `translate(${offsetX}px, ${offsetY}px)`;
+    globalDragState.draggedTab.style.opacity = '0.8';
+    
+    // Find the tab we're hovering over
+    const tabList = document.querySelector('.tab-list');
+    if (!tabList) return;
+    
+    const rect = tabList.getBoundingClientRect();
+    const relativeX = e.clientX - rect.left;
+    
+    // Find which tab position we're over
+    const allTabs = Array.from(tabList.children);
+    let targetIndex = -1;
+    
+    for (let i = 0; i < allTabs.length; i++) {
+      const tabRect = allTabs[i].getBoundingClientRect();
+      const tabCenter = tabRect.left + tabRect.width / 2 - rect.left;
+      
+      if (relativeX < tabCenter) {
+        targetIndex = i;
+        break;
+      }
+    }
+    
+    if (targetIndex === -1) {
+      targetIndex = allTabs.length - 1;
+    }
+    
+    // Clear previous hover effects
+    allTabs.forEach(tab => tab.classList.remove('drag-over'));
+    
+    // Add hover effect to target tab (but not to the dragged tab itself)
+    if (allTabs[targetIndex] && allTabs[targetIndex] !== globalDragState.draggedTab) {
+      allTabs[targetIndex].classList.add('drag-over');
+      console.log('Hovering over tab at index:', targetIndex);
+    }
+  }
+}
+
+function handleGlobalMouseUp(e) {
+  console.log('Global mouse up - isMouseDown:', globalDragState.isMouseDown, 'isDragging:', globalDragState.isDragging);
+  
+  if (!globalDragState.isMouseDown) return;
+  
+  if (globalDragState.isDragging) {
+    console.log('Completing drag operation');
+    
+    // Reset visual styles first
+    globalDragState.draggedTab.style.transform = '';
+    globalDragState.draggedTab.style.opacity = '';
+    globalDragState.draggedTab.style.position = '';
+    globalDragState.draggedTab.style.zIndex = '';
+    globalDragState.draggedTab.style.pointerEvents = '';
+    
+    // Find target position
+    const tabList = document.querySelector('.tab-list');
+    if (tabList) {
+      const rect = tabList.getBoundingClientRect();
+      const relativeX = e.clientX - rect.left;
+      
+      const allTabs = Array.from(tabList.children);
+      let targetIndex = -1;
+      
+      for (let i = 0; i < allTabs.length; i++) {
+        const tabRect = allTabs[i].getBoundingClientRect();
+        const tabCenter = tabRect.left + tabRect.width / 2 - rect.left;
+        
+        if (relativeX < tabCenter) {
+          targetIndex = i;
+          break;
+        }
+      }
+      
+      if (targetIndex === -1) {
+        targetIndex = allTabs.length - 1;
+      }
+      
+      console.log('Drop tab at position:', targetIndex, 'from:', globalDragState.draggedIndex);
+      
+      // Perform reorder if different position
+      if (targetIndex !== globalDragState.draggedIndex) {
+        reorderTabs(globalDragState.draggedIndex, targetIndex);
+        console.log('Tab reordered successfully');
+      }
+      
+      // Clean up
+      allTabs.forEach(tab => tab.classList.remove('drag-over'));
+      globalDragState.draggedTab.classList.remove('dragging');
+    }
+    
+    console.log('Drag completed');
+  } else {
+    // Just a click, switch to tab
+    if (!e.target.closest('.tab-close')) {
+      switchToTab(globalDragState.draggedIndex);
+    }
+  }
+  
+  // Reset drag state
+  globalDragState.isMouseDown = false;
+  globalDragState.isDragging = false;
+  globalDragState.draggedTab = null;
+  globalDragState.draggedIndex = -1;
+}
+
+// Initialize tab system
+function initializeTabSystem() {
+  console.log('Initializing tab system...');
+  
+  // Add global mouse event listeners for tab dragging
+  document.addEventListener('mousemove', handleGlobalMouseMove);
+  document.addEventListener('mouseup', handleGlobalMouseUp);
+  
+  // Initialize tab controls
+  initializeTabControls();
+  
+  // Initialize tab list drag & drop
+  initializeTabListDragDrop();
+  
+  // Initialize empty state
+  updateTabBar();
+}
+
+// Initialize tab list drag & drop
+function initializeTabListDragDrop() {
+  const tabList = document.querySelector('.tab-list');
+  if (!tabList) {
+    console.error('Tab list not found');
+    return;
+  }
+  
+  // Add global dragover and drop events to tab list
+  tabList.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  });
+  
+  tabList.addEventListener('drop', (e) => {
+    e.preventDefault();
+    console.log('Global tab list drop event');
+    
+    // Find the tab element we dropped on
+    const targetTab = e.target.closest('.tab');
+    if (targetTab) {
+      const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
+      const targetIndex = parseInt(targetTab.dataset.tabIndex);
+      
+      console.log('Global drop - Dragged:', draggedIndex, 'Target:', targetIndex);
+      
+      if (!isNaN(draggedIndex) && !isNaN(targetIndex) && draggedIndex !== targetIndex) {
+        reorderTabs(draggedIndex, targetIndex);
+      }
+    }
+    
+    // Clean up drag styles
+    document.querySelectorAll('.tab').forEach(el => {
+      el.classList.remove('drag-over', 'dragging');
+    });
+  });
+  
+  // Prevent tab dragging from interfering with scroll
+  tabList.addEventListener('wheel', (e) => {
+    // Allow horizontal scrolling with mouse wheel
+    if (e.deltaY !== 0) {
+      e.preventDefault();
+      tabList.scrollLeft += e.deltaY;
+    }
+  });
+}
+
+// Initialize tab control buttons
+function initializeTabControls() {
+  const scrollLeftBtn = document.querySelector('.tab-scroll-left');
+  const scrollRightBtn = document.querySelector('.tab-scroll-right');
+  const newTabBtn = document.querySelector('.new-tab-btn');
+  
+  if (scrollLeftBtn) {
+    scrollLeftBtn.addEventListener('click', () => scrollTabs('left'));
+  }
+  
+  if (scrollRightBtn) {
+    scrollRightBtn.addEventListener('click', () => scrollTabs('right'));
+  }
+  
+  if (newTabBtn) {
+    newTabBtn.addEventListener('click', () => openNewTab());
+  }
+}
+
+// Scroll tabs left or right
+function scrollTabs(direction) {
+  const tabList = document.querySelector('.tab-list');
+  if (!tabList) return;
+  
+  const scrollAmount = 150;
+  const currentScroll = tabList.scrollLeft;
+  
+  if (direction === 'left') {
+    tabList.scrollLeft = Math.max(0, currentScroll - scrollAmount);
+  } else {
+    tabList.scrollLeft = currentScroll + scrollAmount;
+  }
+  
+  // Update scroll button states
+  updateScrollButtons();
+}
+
+// Update scroll button states
+function updateScrollButtons() {
+  const tabList = document.querySelector('.tab-list');
+  const scrollLeftBtn = document.querySelector('.tab-scroll-left');
+  const scrollRightBtn = document.querySelector('.tab-scroll-right');
+  
+  if (!tabList || !scrollLeftBtn || !scrollRightBtn) return;
+  
+  const canScrollLeft = tabList.scrollLeft > 0;
+  const canScrollRight = tabList.scrollLeft < (tabList.scrollWidth - tabList.clientWidth);
+  
+  scrollLeftBtn.disabled = !canScrollLeft;
+  scrollRightBtn.disabled = !canScrollRight;
+}
+
+// Open a new empty tab
+function openNewTab() {
+  // Create new tab object
+  const newTab = {
+    id: nextTabId++,
+    title: 'New Note',
+    path: null,
+    content: '',
+    hasUnsavedChanges: false,
+    isModified: false
+  };
+  
+  // Add to tabs array
+  openTabs.push(newTab);
+  activeTabIndex = openTabs.length - 1;
+  
+  // Update UI
+  updateTabBar();
+  switchToTab(activeTabIndex);
+  
+  // Save tab session
+  saveTabSession();
+  
+  console.log('New tab opened:', newTab);
+}
+
+// Open note in new tab
+function openNoteInTab(notePath, shouldSwitchToTab = true) {
+  // Check if note is already open in a tab
+  const existingTabIndex = openTabs.findIndex(tab => tab.path === notePath);
+  
+  if (existingTabIndex !== -1) {
+    // Switch to existing tab
+    if (shouldSwitchToTab) {
+      activeTabIndex = existingTabIndex;
+      updateTabBar();
+      switchToTab(activeTabIndex);
+    }
+    return existingTabIndex;
+  }
+  
+  // Get note title from path
+  let noteTitle = path.basename(notePath);
+  // Remove .html extension if present
+  if (noteTitle.endsWith('.html')) {
+    noteTitle = noteTitle.substring(0, noteTitle.length - 5);
+  }
+  // Remove .md extension if present
+  if (noteTitle.endsWith('.md')) {
+    noteTitle = noteTitle.substring(0, noteTitle.length - 3);
+  }
+  
+  // Create new tab
+  const newTab = {
+    id: nextTabId++,
+    title: noteTitle,
+    path: notePath,
+    content: '',
+    hasUnsavedChanges: false,
+    isModified: false
+  };
+  
+  // Add to tabs array
+  openTabs.push(newTab);
+  const newTabIndex = openTabs.length - 1;
+  
+  if (shouldSwitchToTab) {
+    activeTabIndex = newTabIndex;
+  }
+  
+  // Update UI
+  updateTabBar();
+  
+  if (shouldSwitchToTab) {
+    switchToTab(activeTabIndex);
+  }
+  
+  // Save tab session
+  saveTabSession();
+  
+  console.log('Note opened in new tab:', newTab);
+  return newTabIndex;
+}
+
+// Close tab by index
+function closeTab(tabIndex) {
+  if (tabIndex < 0 || tabIndex >= openTabs.length) {
+    return;
+  }
+  
+  const tab = openTabs[tabIndex];
+  
+  // Check for unsaved changes
+  if (tab.hasUnsavedChanges) {
+    const confirmed = confirm(`Tab "${tab.title}" has unsaved changes. Close anyway?`);
+    if (!confirmed) {
+      return;
+    }
+  }
+  
+  // Remove tab from array
+  openTabs.splice(tabIndex, 1);
+  
+  // Adjust active tab index
+  if (activeTabIndex === tabIndex) {
+    // If closing active tab, switch to adjacent tab
+    if (openTabs.length === 0) {
+      activeTabIndex = -1;
+      clearEditor();
+    } else if (activeTabIndex >= openTabs.length) {
+      activeTabIndex = openTabs.length - 1;
+      switchToTab(activeTabIndex);
+    } else {
+      switchToTab(activeTabIndex);
+    }
+  } else if (activeTabIndex > tabIndex) {
+    // Adjust index if closed tab was before active tab
+    activeTabIndex--;
+  }
+  
+  // Update UI
+  updateTabBar();
+  
+  // Save tab session
+  saveTabSession();
+  
+  console.log('Tab closed:', tab);
+}
+
+// Switch to tab by index
+async function switchToTab(tabIndex) {
+  if (tabIndex < 0 || tabIndex >= openTabs.length) {
+    return;
+  }
+  
+  // Save current tab content if switching from another tab
+  if (activeTabIndex !== -1 && activeTabIndex !== tabIndex && editor) {
+    const currentTab = openTabs[activeTabIndex];
+    if (currentTab) {
+      currentTab.content = editor.getContents();
+      currentTab.hasUnsavedChanges = hasUnsavedChanges;
+    }
+  }
+  
+  activeTabIndex = tabIndex;
+  const tab = openTabs[tabIndex];
+  
+  // Update UI first to show correct active state
+  updateTabBar();
+  
+  // Load tab content
+  if (tab.path) {
+    // Load note file using async function
+    await loadNoteFromTab(tab);
+  } else {
+    // New empty tab
+    loadEmptyNote(tab.title);
+  }
+  
+  // Update active note in explorer
+  updateActiveNoteInExplorer(tab.path);
+  
+  // Save session to persist active tab change
+  saveTabSession();
+  
+  console.log('Switched to tab:', tab);
+}
+
+// Load note from tab
+async function loadNoteFromTab(tab) {
+  try {
+    if (tab.content && typeof tab.content === 'object') {
+      // Use cached content (Delta format)
+      editor.setContents(tab.content);
+      
+      // Update current note tracking
+      currentNote = tab.title;
+      currentNotePath = tab.path;
+      hasUnsavedChanges = tab.hasUnsavedChanges;
+    } else {
+      // Load from file using original function to avoid recursion
+      const success = await originalOpenNote(tab.path);
+      if (success) {
+        // Update tab with loaded content
+        tab.content = editor.getContents();
+      }
+    }
+    
+    // Update note title
+    const noteTitleEl = document.getElementById('note-title');
+    if (noteTitleEl) {
+      noteTitleEl.textContent = tab.title;
+    }
+
+    // Update active note in explorer
+    updateActiveNoteInExplorer(tab.path);
+    
+    // Ensure tab bar is updated with correct active state
+    updateTabBar();
+    
+  } catch (error) {
+    console.error('Error loading note from tab:', error);
+    showStatusMessage('Error loading note: ' + error.message, 'error');
+  }
+}
+
+// Load empty note for new tab
+function loadEmptyNote(title) {
+  if (editor) {
+    editor.setContents([{ insert: '\n' }]);
+  }
+  
+  currentNote = title;
+  currentNotePath = null;
+  hasUnsavedChanges = false;
+  
+  // Update note title
+  const noteTitleEl = document.getElementById('note-title');
+  if (noteTitleEl) {
+    noteTitleEl.textContent = title;
+  }
+  
+  // Clear creation date
+  const creationDateEl = document.getElementById('note-creation-date');
+  if (creationDateEl) {
+    creationDateEl.textContent = '';
+  }
+  
+  // Clear active note in explorer since this is a new note
+  updateActiveNoteInExplorer(null);
+}
+
+// Clear editor when no tabs are open
+function clearEditor() {
+  if (editor) {
+    editor.setContents([{ insert: '\n' }]);
+  }
+  
+  currentNote = null;
+  currentNotePath = null;
+  hasUnsavedChanges = false;
+  
+  // Clear UI
+  const noteTitleEl = document.getElementById('note-title');
+  if (noteTitleEl) {
+    noteTitleEl.textContent = '';
+  }
+  
+  const creationDateEl = document.getElementById('note-creation-date');
+  if (creationDateEl) {
+    creationDateEl.textContent = '';
+  }
+}
+
+// Update tab bar UI
+function updateTabBar() {
+  const tabList = document.querySelector('.tab-list');
+  if (!tabList) return;
+  
+  // Clear existing tabs
+  tabList.innerHTML = '';
+  
+  // Create tab elements
+  openTabs.forEach((tab, index) => {
+    const tabElement = createTabElement(tab, index);
+    tabList.appendChild(tabElement);
+  });
+  
+  // Force update active states
+  setTimeout(() => {
+    const allTabs = tabList.querySelectorAll('.tab');
+    allTabs.forEach((tabEl, index) => {
+      const isActive = index === activeTabIndex;
+      if (isActive) {
+        tabEl.classList.add('active');
+      } else {
+        tabEl.classList.remove('active');
+      }
+    });
+  }, 0);
+  
+  // Update scroll buttons
+  setTimeout(() => {
+    updateScrollButtons();
+  }, 0);
+}
+
+// Create tab element
+function createTabElement(tab, index) {
+  const tabElement = document.createElement('div');
+  tabElement.className = `tab ${index === activeTabIndex ? 'active' : ''}`;
+  tabElement.dataset.tabIndex = index;
+  // Removed draggable="true" - using mouse events instead
+  
+  // Tab icon
+  const icon = document.createElement('div');
+  icon.className = 'tab-icon';
+  icon.innerHTML = tab.path ? 
+    '<svg viewBox="0 0 24 24"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/></svg>' :
+    '<svg viewBox="0 0 24 24"><path d="M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3M19,19H5V5H19V19Z"/></svg>';
+  
+  // Tab title
+  const title = document.createElement('div');
+  title.className = 'tab-title';
+  title.textContent = tab.title + (tab.hasUnsavedChanges ? ' •' : '');
+  title.title = tab.path || 'New Note';
+  
+  // Tab close button
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'tab-close';
+  closeBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/></svg>';
+  closeBtn.title = 'Close tab';
+  
+  // Event listeners
+  tabElement.addEventListener('click', (e) => {
+    if (!e.target.closest('.tab-close')) {
+      switchToTab(index);
+    }
+  });
+  
+  closeBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeTab(index);
+  });
+  
+  // Middle mouse button to close
+  tabElement.addEventListener('mousedown', (e) => {
+    if (e.button === 1) { // Middle mouse button
+      e.preventDefault();
+      closeTab(index);
+    }
+  });
+  
+  // Tab reordering with mouse events (global handlers manage the dragging)
+  tabElement.addEventListener('mousedown', (e) => {
+    if (e.button === 1) { // Middle mouse button to close
+      e.preventDefault();
+      closeTab(index);
+      return;
+    }
+    
+    if (e.button === 0 && !e.target.closest('.tab-close')) { // Left mouse button
+      globalDragState.isMouseDown = true;
+      globalDragState.isDragging = false;
+      globalDragState.dragStartX = e.clientX;
+      globalDragState.dragStartY = e.clientY;
+      globalDragState.draggedTab = tabElement;
+      globalDragState.draggedIndex = index;
+      
+      console.log('Mouse down on tab:', index, 'at position:', e.clientX, e.clientY);
+      
+      // Prevent text selection during drag
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+  
+  // Remove the old local handlers - we're using global ones now
+  
+  // Assemble tab
+  tabElement.appendChild(icon);
+  tabElement.appendChild(title);
+  tabElement.appendChild(closeBtn);
+  
+  return tabElement;
+}
+
+// Update active note in explorer
+function updateActiveNoteInExplorer(notePath) {
+  // Clear all active classes in explorer
+  document.querySelectorAll('.tree-item.active, .tree-node.active').forEach(el => {
+    el.classList.remove('active');
+  });
+  
+  // If notePath is provided, set the corresponding note as active in explorer
+  if (notePath) {
+    const noteElement = document.querySelector(`.tree-item[data-path="${notePath}"]`);
+    if (noteElement) {
+      noteElement.classList.add('active');
+      console.log('Updated active note in explorer:', notePath);
+    } else {
+      console.log('Note not found in explorer:', notePath);
+    }
+  }
+}
+
+// Reorder tabs by moving tab from one index to another
+function reorderTabs(fromIndex, toIndex) {
+  console.log('reorderTabs called with:', fromIndex, toIndex);
+  
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || 
+      fromIndex >= openTabs.length || toIndex >= openTabs.length) {
+    console.log('Invalid reorder parameters, skipping');
+    return;
+  }
+  
+  console.log(`Reordering tab from ${fromIndex} to ${toIndex}`);
+  console.log('Before reorder - tabs:', openTabs.map(t => t.title));
+  console.log('Before reorder - activeTabIndex:', activeTabIndex);
+  
+  // Remove tab from old position
+  const [movedTab] = openTabs.splice(fromIndex, 1);
+  console.log('Moved tab:', movedTab.title);
+  
+  // Insert tab at new position
+  openTabs.splice(toIndex, 0, movedTab);
+  console.log('After reorder - tabs:', openTabs.map(t => t.title));
+  
+  // Update active tab index
+  if (activeTabIndex === fromIndex) {
+    // The active tab was moved
+    activeTabIndex = toIndex;
+  } else if (activeTabIndex > fromIndex && activeTabIndex <= toIndex) {
+    // Active tab was shifted left
+    activeTabIndex--;
+  } else if (activeTabIndex < fromIndex && activeTabIndex >= toIndex) {
+    // Active tab was shifted right
+    activeTabIndex++;
+  }
+  
+  console.log('New activeTabIndex:', activeTabIndex);
+  
+  // Update UI
+  updateTabBar();
+  
+  // Save tab session
+  saveTabSession();
+  
+  console.log('Tab reordering completed. New active index:', activeTabIndex);
+}
+
+// Override existing openNote function to work with tabs
+originalOpenNote = openNote;
+openNote = async function(notePath) {
+  // If tabs are enabled and we have tabs open, open in current tab or new tab
+  if (openTabs.length > 0) {
+    // Check if this is a switch to existing tab
+    const existingTabIndex = openTabs.findIndex(tab => tab.path === notePath);
+    
+    if (existingTabIndex !== -1) {
+      // Switch to existing tab
+      activeTabIndex = existingTabIndex;
+      updateTabBar();
+      switchToTab(activeTabIndex);
+      return true;
+    }
+    
+    // If we have an active tab and it's empty, use it
+    if (activeTabIndex !== -1) {
+      const activeTab = openTabs[activeTabIndex];
+      if (!activeTab.path && !activeTab.hasUnsavedChanges) {
+        // Use current empty tab
+        activeTab.path = notePath;
+        activeTab.title = path.basename(notePath, '.md');
+        const success = await originalOpenNote(notePath);
+        if (success) {
+          activeTab.content = editor.getContents();
+          updateTabBar();
+          // Save tab session after opening
+          saveTabSession();
+        }
+        return success;
+      }
+    }
+    
+    // Open in new tab
+    const tabIndex = openNoteInTab(notePath, true);
+    const success = await originalOpenNote(notePath);
+    if (success) {
+      // Save tab session after opening
+      saveTabSession();
+    }
+    return success;
+  } else {
+    // No tabs open, open normally and create first tab
+    const success = await originalOpenNote(notePath);
+    if (success) {
+      openNoteInTab(notePath, false);
+      // Save tab session after opening
+      saveTabSession();
+    }
+    return success;
+  }
+};
+
+// Save tab session to settings
+async function saveTabSession() {
+  try {
+    if (!settings) return;
+    
+    // Create tab session data
+    const tabSession = {
+      openTabs: openTabs.map(tab => ({
+        id: tab.id,
+        title: tab.title,
+        path: tab.path,
+        hasUnsavedChanges: tab.hasUnsavedChanges
+      })),
+      activeTabIndex: activeTabIndex,
+      nextTabId: nextTabId
+    };
+    
+    // Save to settings
+    settings.tabSession = tabSession;
+    await ipcRenderer.invoke('save-settings', settings);
+    
+    console.log('Tab session saved - activeTabIndex:', activeTabIndex, 'tab:', openTabs[activeTabIndex]?.title);
+  } catch (error) {
+    console.error('Error saving tab session:', error);
+  }
+}
+
+// Load tab session from settings
+async function loadTabSession() {
+  try {
+    if (!settings || !settings.tabSession) {
+      console.log('No tab session found');
+      return;
+    }
+    
+    const tabSession = settings.tabSession;
+    console.log('Loading tab session with', tabSession.openTabs.length, 'tabs, active:', tabSession.activeTabIndex);
+    
+    // Restore tab data
+    openTabs = tabSession.openTabs.map(tab => ({
+      ...tab,
+      content: '',
+      isModified: false
+    }));
+    activeTabIndex = tabSession.activeTabIndex;
+    nextTabId = tabSession.nextTabId || (Math.max(...openTabs.map(t => t.id)) + 1);
+    
+    // Validate activeTabIndex
+    if (activeTabIndex >= openTabs.length) {
+      console.warn('Active tab index out of bounds, resetting to 0');
+      activeTabIndex = 0;
+    }
+    
+    // Switch to active tab first
+    if (activeTabIndex >= 0 && activeTabIndex < openTabs.length) {
+      await switchToTab(activeTabIndex);
+    } else if (openTabs.length > 0) {
+      // Fallback to first tab
+      activeTabIndex = 0;
+      await switchToTab(activeTabIndex);
+    }
+    
+    // Update UI after switching to ensure correct active state
+    updateTabBar();
+    
+    console.log('Tab session restored successfully');
+  } catch (error) {
+    console.error('Error loading tab session:', error);
+  }
+}
