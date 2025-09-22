@@ -14,6 +14,12 @@
   --shadow-color: rgba(0, 0, 0, 0.1);
 }
 
+html {
+  background: transparent;
+  height: 100vh;
+  overflow: hidden;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -24,11 +30,18 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size);
   color: var(--text-color);
-  background-color: var(--background-color);
+  background: transparent;
   line-height: 1.5;
   overflow: hidden;
   height: 100vh;
-  border-radius: 7px;
+}
+
+.window-container {
+  width: 100%;
+  height: 100%;
+  background-color: var(--background-color);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 /* Custom Window Controls */
@@ -42,8 +55,8 @@ body {
   padding: 0 10px;
   -webkit-app-region: drag;
   user-select: none;
-  border-top-left-radius: 7px;
-  border-top-right-radius: 7px;
+  border-top-left-radius: 10px;
+  border-top-right-radius: 10px;
 }
 
 .titlebar-app {
@@ -662,7 +675,7 @@ body {
 
 .modal-content {
   background-color: var(--background-color);
-  border-radius: 7px;
+  border-radius: 10px;
   width: 400px;
   max-width: 90%;
   box-shadow: 0 5px 15px var(--shadow-color);
@@ -872,34 +885,97 @@ kbd {
 
 /* Reordering Styles */
 .tree-node.dragging {
-  opacity: 0.5 !important;
-  transition: opacity 0.2s ease;
+  opacity: 0.4 !important;
+  transform: scale(0.95) !important;
+  transition: all 0.2s ease !important;
+  filter: blur(0.5px) !important;
+  border: 1px dashed var(--accent-color) !important;
+  border-radius: 4px !important;
 }
 
 .tree-node.reorder-target {
-  background-color: var(--active-color);
-  border-radius: 4px;
-  transition: background-color 0.2s ease;
+  background-color: var(--active-color) !important;
+  border-radius: 4px !important;
+  transition: all 0.2s ease !important;
+  box-shadow: 0 2px 8px rgba(0, 120, 215, 0.3) !important;
 }
 
 .tree-node.reorder-mode {
-  outline: 2px solid var(--accent-color);
-  outline-offset: 2px;
-  border-radius: 4px;
+  outline: 2px solid var(--accent-color) !important;
+  outline-offset: 2px !important;
+  border-radius: 4px !important;
+}
+
+/* Drop zone highlighting */
+.tree-node.drop-zone {
+  background-color: rgba(0, 120, 215, 0.1) !important;
+  border: 2px dashed var(--accent-color) !important;
+  border-radius: 6px !important;
+  animation: dropZonePulse 2s ease-in-out infinite !important;
+}
+
+@keyframes dropZonePulse {
+  0% { 
+    background-color: rgba(0, 120, 215, 0.05);
+    border-color: rgba(0, 120, 215, 0.3);
+  }
+  50% { 
+    background-color: rgba(0, 120, 215, 0.15);
+    border-color: var(--accent-color);
+  }
+  100% { 
+    background-color: rgba(0, 120, 215, 0.05);
+    border-color: rgba(0, 120, 215, 0.3);
+  }
 }
 
 .reorder-ghost {
-  height: 2px !important;
-  background-color: var(--accent-color) !important;
+  height: 3px !important;
+  background: linear-gradient(90deg, var(--accent-color), #4FC3F7) !important;
   margin: 2px 0 !important;
-  border-radius: 1px !important;
-  opacity: 0.8 !important;
+  border-radius: 2px !important;
+  opacity: 1 !important;
   pointer-events: none !important;
-  animation: pulse 1s infinite;
+  animation: ghostPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 8px rgba(0, 120, 215, 0.5) !important;
+  position: relative !important;
 }
 
-@keyframes pulse {
-  0% { opacity: 0.4; }
-  50% { opacity: 0.8; }
-  100% { opacity: 0.4; }
+.reorder-ghost::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -2px;
+  width: 8px;
+  height: 8px;
+  background-color: var(--accent-color);
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(0, 120, 215, 0.7);
+}
+
+.reorder-ghost::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -2px;
+  width: 8px;
+  height: 8px;
+  background-color: #4FC3F7;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(79, 195, 247, 0.7);
+}
+
+@keyframes ghostPulse {
+  0% { 
+    opacity: 0.6;
+    transform: scaleY(1);
+  }
+  50% { 
+    opacity: 1;
+    transform: scaleY(1.2);
+  }
+  100% { 
+    opacity: 0.6;
+    transform: scaleY(1);
+  }
 }

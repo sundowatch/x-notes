@@ -36,10 +36,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     await initializeApp();
     
     // Save expanded folders when app is closing
-    ipcRenderer.on('app-closing', () => {
-      console.log('Application is closing, saving expanded folders state...');
+    ipcRenderer.on('app-closing', async () => {
+      console.log('Application is closing, saving state...');
+      
+      // Save expanded folders
       const expandedFolders = saveExpandedState();
-      ipcRenderer.invoke('save-expanded-folders', expandedFolders);
+      await ipcRenderer.invoke('save-expanded-folders', expandedFolders);
+      
+      // Save current note as last opened note
+      if (currentNotePath) {
+        console.log('Saving last opened note on close:', currentNotePath);
+        await ipcRenderer.invoke('save-last-opened-note', currentNotePath);
+      }
     });
     
   } catch (error) {
@@ -85,6 +93,52 @@ async function initializeApp() {
   
   // Load notes
   await loadNotes();
+  
+  // Open last opened note if available
+  await openLastOpenedNote();
+}
+
+// Open the last opened note automatically
+async function openLastOpenedNote() {
+  try {
+    if (!settings || !settings.lastOpenedNote) {
+      console.log('No last opened note found');
+      return;
+    }
+
+    const lastNotePath = settings.lastOpenedNote;
+    console.log('Attempting to open last note:', lastNotePath);
+
+    // Check if the file still exists
+    const fs = require('fs');
+    if (!fs.existsSync(lastNotePath)) {
+      console.log('Last opened note no longer exists:', lastNotePath);
+      // Clear the invalid path from settings
+      await ipcRenderer.invoke('save-last-opened-note', null);
+      return;
+    }
+
+    // Open the note
+    const success = await openNote(lastNotePath);
+    if (success) {
+      console.log('Last opened note restored successfully:', lastNotePath);
+      
+      // Show a brief notification
+      showStatusMessage('Last note restored', 'info');
+    } else {
+      console.log('Failed to open last note:', lastNotePath);
+      // Clear the invalid path from settings
+      await ipcRenderer.invoke('save-last-opened-note', null);
+    }
+  } catch (error) {
+    console.error('Error opening last opened note:', error);
+    // Clear the invalid path from settings in case of error
+    try {
+      await ipcRenderer.invoke('save-last-opened-note', null);
+    } catch (clearError) {
+      console.error('Error clearing last opened note:', clearError);
+    }
+  }
 }
 
 // Initialize window control buttons
@@ -171,7 +225,7 @@ function initializeEditor() {
     
     // Test if editor is working
     try {
-      editor.setText('Editor initialized!');
+      editor.setText('Create or edit your note!');
       console.log('Initial text set in editor');
     } catch (e) {
       console.error('Could not set initial text in editor:', e);
@@ -876,6 +930,20 @@ async function saveNoteColor(notePath, color) {
   }
 }
 
+// Helper function to show status messages
+function showStatusMessage(message, type = 'info') {
+  const statusIndicator = document.querySelector('.status-indicator');
+  if (statusIndicator) {
+    statusIndicator.textContent = message;
+    statusIndicator.classList.remove('visible', 'saved', 'error', 'unsaved');
+    statusIndicator.classList.add('visible', type);
+    
+    setTimeout(() => {
+      statusIndicator.classList.remove('visible');
+    }, 3000);
+  }
+}
+
 // Load notes tree
 async function loadNotes() {
   try {
@@ -1371,6 +1439,14 @@ async function openNote(notePath) {
       }
     } catch (e) {
       console.error('Error highlighting active note:', e);
+    }
+    
+    // Save this note as the last opened note
+    try {
+      await ipcRenderer.invoke('save-last-opened-note', notePath);
+      console.log('Last opened note saved:', notePath);
+    } catch (error) {
+      console.error('Error saving last opened note:', error);
     }
     
     return true;
@@ -2340,7 +2416,10 @@ function setupDragAndDrop() {
     draggedPath: null,
     isReorderMode: false,
     originalParent: null,
-    ghostElement: null
+    ghostElement: null,
+    dropTarget: null,
+    dropPosition: null,
+    hoverTimer: null
   };
 
   // Clear any existing event listeners and state
@@ -2354,12 +2433,20 @@ function setupDragAndDrop() {
     dragState.draggedPath = null;
     dragState.isReorderMode = false;
     dragState.originalParent = null;
+    dragState.dropTarget = null;
+    dragState.dropPosition = null;
     
     // Remove all drag styling
-    const dragOverElements = explorerElement.querySelectorAll('.drag-over, .reorder-target');
+    const dragOverElements = explorerElement.querySelectorAll('.drag-over, .reorder-target, .drop-zone, .reorder-mode');
     dragOverElements.forEach(el => {
-      el.classList.remove('drag-over', 'reorder-target');
+      el.classList.remove('drag-over', 'reorder-target', 'drop-zone', 'reorder-mode');
     });
+    
+    // Clear hover timer
+    if (dragState.hoverTimer) {
+      clearTimeout(dragState.hoverTimer);
+      dragState.hoverTimer = null;
+    }
   }
 
   // Create ghost element for reordering
@@ -2431,7 +2518,7 @@ function setupDragAndDrop() {
     if (!dragState.isDragging) return;
     
     const target = e.target.closest('.tree-node');
-    if (!target) return;
+    if (!target || target === dragState.draggedElement) return;
 
     // Immediately switch to reorder mode
     if (!dragState.isReorderMode) {
@@ -2439,64 +2526,94 @@ function setupDragAndDrop() {
       dragState.isReorderMode = true;
       
       // Remove any existing drag-over styling
-      const dragOverElements = explorerEl.querySelectorAll('.drag-over');
-      dragOverElements.forEach(el => el.classList.remove('drag-over'));
+      const dragOverElements = explorerEl.querySelectorAll('.drag-over, .drop-zone');
+      dragOverElements.forEach(el => {
+        el.classList.remove('drag-over', 'drop-zone');
+      });
     }
 
     if (dragState.isReorderMode) {
-      // In reorder mode - show insertion point
+      // Clear previous styling
+      const previousTargets = explorerEl.querySelectorAll('.reorder-target');
+      previousTargets.forEach(el => el.classList.remove('reorder-target'));
+      
+      // Remove existing ghost
+      if (dragState.ghostElement) {
+        dragState.ghostElement.remove();
+        dragState.ghostElement = null;
+      }
+      
       e.dataTransfer.dropEffect = 'move';
       
       let parentContainer;
+      let insertPosition = 'after';
       
-      // Check if target is a directory and we're hovering over its content area
+      // Determine drop target and position
       if (target.dataset.type === 'directory') {
-        const childrenContainer = target.querySelector('.tree-children');
-        if (childrenContainer && isHoveringOverFolderContent(target)) {
-          parentContainer = childrenContainer;
+        const targetRect = target.getBoundingClientRect();
+        const targetHeaderHeight = 30; // Approximate header height
+        
+        if (e.clientY < targetRect.top + targetHeaderHeight) {
+          // Dropping before the folder
+          parentContainer = target.parentElement;
+          insertPosition = 'before';
+        } else {
+          // Dropping inside the folder
+          const childrenContainer = target.querySelector('.tree-children');
+          if (childrenContainer) {
+            parentContainer = childrenContainer;
+            insertPosition = 'first';
+            // Ensure folder is expanded
+            target.classList.add('expanded');
+          } else {
+            // Folder has no children container, drop after
+            parentContainer = target.parentElement;
+            insertPosition = 'after';
+          }
         }
       } else {
-        // Target is a file, get its parent container
-        parentContainer = getParentFolderElement(target);
+        // Target is a file
+        parentContainer = target.parentElement;
+        
+        const rect = target.getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
+        
+        insertPosition = e.clientY < midpoint ? 'before' : 'after';
       }
       
       if (parentContainer) {
-        // Remove existing ghost
-        if (dragState.ghostElement) {
-          dragState.ghostElement.remove();
-        }
+        // Create new ghost element with improved styling
+        dragState.ghostElement = document.createElement('div');
+        dragState.ghostElement.className = 'reorder-ghost';
         
-        // Create new ghost element
-        dragState.ghostElement = createGhostElement();
-        
-        if (target.dataset.type === 'directory' && isHoveringOverFolderContent(target)) {
-          // Dropping into a folder - add to the beginning
-          const childrenContainer = target.querySelector('.tree-children');
-          if (childrenContainer.children.length > 0) {
-            childrenContainer.insertBefore(dragState.ghostElement, childrenContainer.firstChild);
-          } else {
-            childrenContainer.appendChild(dragState.ghostElement);
-          }
-        } else {
-          // Dropping relative to another item
-          const rect = target.getBoundingClientRect();
-          const midpoint = rect.top + rect.height / 2;
-          
-          if (e.clientY < midpoint) {
-            // Insert before
-            target.parentElement.insertBefore(dragState.ghostElement, target);
-          } else {
-            // Insert after
+        // Position the ghost element
+        switch (insertPosition) {
+          case 'first':
+            if (parentContainer.children.length > 0) {
+              parentContainer.insertBefore(dragState.ghostElement, parentContainer.firstChild);
+            } else {
+              parentContainer.appendChild(dragState.ghostElement);
+            }
+            break;
+          case 'before':
+            parentContainer.insertBefore(dragState.ghostElement, target);
+            break;
+          case 'after':
             const nextSibling = target.nextElementSibling;
             if (nextSibling) {
-              target.parentElement.insertBefore(dragState.ghostElement, nextSibling);
+              parentContainer.insertBefore(dragState.ghostElement, nextSibling);
             } else {
-              target.parentElement.appendChild(dragState.ghostElement);
+              parentContainer.appendChild(dragState.ghostElement);
             }
-          }
+            break;
         }
         
+        // Add visual feedback to target
         target.classList.add('reorder-target');
+        
+        // Store position info for drop handler
+        dragState.dropPosition = insertPosition;
+        dragState.dropTarget = target;
       }
     }
   });
@@ -2519,19 +2636,22 @@ function setupDragAndDrop() {
     e.preventDefault();
     
     const draggedPath = e.dataTransfer.getData('text/plain');
-    const target = e.target.closest('.tree-node');
+    const target = dragState.dropTarget || e.target.closest('.tree-node');
+    const position = dragState.dropPosition || 'after';
     
     console.log('Drop event triggered');
     console.log('Dragged path:', draggedPath);
     console.log('Target element:', target);
+    console.log('Drop position:', position);
     console.log('Is reorder mode:', dragState.isReorderMode);
     
     // Remove drag over styling
-    if (target) {
-      target.classList.remove('drag-over', 'reorder-target', 'reorder-mode');
-    }
+    const allTargets = explorerEl.querySelectorAll('.drag-over, .reorder-target, .drop-zone');
+    allTargets.forEach(el => {
+      el.classList.remove('drag-over', 'reorder-target', 'drop-zone', 'reorder-mode');
+    });
 
-    if (draggedPath && target) {
+    if (draggedPath && target && target !== dragState.draggedElement) {
       if (dragState.isReorderMode) {
         // Handle reordering (with possible move)
         console.log('Performing reorder operation');
@@ -2540,33 +2660,41 @@ function setupDragAndDrop() {
         let newIndex = 0;
         
         try {
-          // Determine target directory and index
-          if (target.dataset.type === 'directory' && isHoveringOverFolderContent(target)) {
-            // Dropping into a folder
-            targetDirectory = target.dataset.path;
-            newIndex = 0; // Add at beginning
-          } else {
-            // Dropping relative to another item
-            const targetParent = getParentFolderElement(target);
-            
-            if (targetParent) {
-              // Find the directory path from the parent container
-              const parentNode = targetParent.closest('.tree-node[data-type="directory"]');
-              if (parentNode) {
-                targetDirectory = parentNode.dataset.path;
+          // Determine target directory and index based on position
+          switch (position) {
+            case 'first':
+              // Dropping into a folder (at the beginning)
+              targetDirectory = target.dataset.path;
+              newIndex = 0;
+              break;
+              
+            case 'before':
+            case 'after':
+              // Dropping relative to another item
+              const targetParent = target.parentElement;
+              
+              if (targetParent.classList.contains('tree-children')) {
+                // Inside a folder
+                const parentNode = targetParent.closest('.tree-node[data-type="directory"]');
+                if (parentNode) {
+                  targetDirectory = parentNode.dataset.path;
+                } else {
+                  // Root directory case
+                  const explorerEl = document.getElementById('explorer');
+                  targetDirectory = noteTree.path; // Use root path
+                }
               } else {
-                // Root directory
-                targetDirectory = path.dirname(target.dataset.path);
+                // At root level
+                targetDirectory = noteTree.path;
               }
               
-              // Calculate index based on ghost position
-              if (dragState.ghostElement) {
-                const ghostIndex = Array.from(targetParent.children).indexOf(dragState.ghostElement);
-                newIndex = Array.from(targetParent.children)
-                  .slice(0, ghostIndex)
-                  .filter(child => child.classList.contains('tree-node')).length;
-              }
-            }
+              // Calculate index based on position
+              const siblings = Array.from(targetParent.children)
+                .filter(child => child.classList.contains('tree-node'));
+              const targetIndex = siblings.indexOf(target);
+              
+              newIndex = position === 'before' ? targetIndex : targetIndex + 1;
+              break;
           }
           
           const currentDirectory = path.dirname(draggedPath);
@@ -2598,14 +2726,18 @@ function setupDragAndDrop() {
               if (reorderResult.success) {
                 await loadNotes();
                 console.log('Item moved and reordered successfully');
+                
+                // Show success feedback
+                showStatusMessage('Item moved and reordered successfully', 'success');
               } else {
                 console.error('Error setting item order:', reorderResult.error);
                 // Item was moved but ordering failed
                 await loadNotes();
+                showStatusMessage('Item moved but ordering failed', 'warning');
               }
             } else {
               console.error('Error moving item:', moveResult.error);
-              alert('Error moving item: ' + moveResult.error);
+              showStatusMessage('Error moving item: ' + moveResult.error, 'error');
             }
           } else if (targetDirectory) {
             // Reorder within same directory
@@ -2617,14 +2749,15 @@ function setupDragAndDrop() {
             if (result.success) {
               await loadNotes();
               console.log('Item reordered successfully');
+              showStatusMessage('Item reordered successfully', 'success');
             } else {
               console.error('Error reordering item:', result.error);
-              alert('Error reordering item: ' + result.error);
+              showStatusMessage('Error reordering item: ' + result.error, 'error');
             }
           }
         } catch (error) {
           console.error('Error in reorder operation:', error);
-          alert('Error in reorder operation: ' + error.message);
+          showStatusMessage('Error in reorder operation: ' + error.message, 'error');
         }
       } else if (target.dataset.type === 'directory') {
         // Handle regular folder move (simple drop without reordering)
@@ -2637,6 +2770,8 @@ function setupDragAndDrop() {
         // Don't allow dropping on self or children
         if (draggedPath === targetPath || targetPath.startsWith(draggedPath)) {
           console.log('Cannot drop on self or children');
+          showStatusMessage('Cannot move item into itself', 'warning');
+          clearDragState();
           return;
         }
 
@@ -2656,23 +2791,39 @@ function setupDragAndDrop() {
           if (result.success) {
             await loadNotes(); // Reload the tree
             console.log('Item moved successfully');
+            showStatusMessage('Item moved successfully', 'success');
           } else {
             console.error('Error moving item:', result.error);
-            alert('Error moving item: ' + result.error);
+            showStatusMessage('Error moving item: ' + result.error, 'error');
           }
         } catch (error) {
           console.error('Error moving item:', error);
-          alert('Error moving item: ' + error.message);
+          showStatusMessage('Error moving item: ' + error.message, 'error');
         }
       }
     } else {
       console.log('Drop conditions not met:');
       console.log('- Has dragged path:', !!draggedPath);
       console.log('- Has target:', !!target);
+      console.log('- Target is not dragged element:', target !== dragState.draggedElement);
     }
     
     clearDragState();
   });
+
+  // Helper function to show status messages
+  function showStatusMessage(message, type = 'info') {
+    const statusIndicator = document.querySelector('.status-indicator');
+    if (statusIndicator) {
+      statusIndicator.textContent = message;
+      statusIndicator.classList.remove('visible', 'saved', 'error', 'unsaved');
+      statusIndicator.classList.add('visible', type);
+      
+      setTimeout(() => {
+        statusIndicator.classList.remove('visible');
+      }, 3000);
+    }
+  }
 }
 
 // Call the setup function after DOM is loaded

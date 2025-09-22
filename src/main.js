@@ -22,7 +22,8 @@ const defaultSettings = {
   fontFamily: 'Arial',
   copyAsMarkdown: true,
   folderColors: {}, // Store folder color preferences
-  noteColors: {} // Store note color preferences
+  noteColors: {}, // Store note color preferences
+  lastOpenedNote: null // Store the path of the last opened note
 };
 
 let mainWindow;
@@ -69,18 +70,25 @@ function createWindow() {
     minWidth: 600,
     minHeight: 400,
     frame: false,
+    transparent: true,
     icon: path.join(__dirname, '..', 'assets', 'icons', 'icon.png'),
-    backgroundColor: settings.theme === 'dark' ? '#222222' : '#ffffff',
+    backgroundColor: 'rgba(0,0,0,0)',
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
       enableRemoteModule: true,
       devTools: true // Ensure DevTools is enabled
-    }
+    },
+    show: false // Hide initially to prevent flash
   });
 
   // Load the index.html of the app
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  
+  // Show the window after it's ready
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
   
   // Only in development mode
   if (isDev) {
@@ -389,6 +397,19 @@ ipcMain.handle('get-settings', () => {
 ipcMain.handle('save-settings', (event, newSettings) => {
   saveSettings(newSettings);
   return { success: true };
+});
+
+// Save last opened note
+ipcMain.handle('save-last-opened-note', (event, notePath) => {
+  try {
+    settings.lastOpenedNote = notePath;
+    saveSettings(settings);
+    console.log('Last opened note saved:', notePath);
+    return { success: true };
+  } catch (error) {
+    console.error('Error saving last opened note:', error);
+    return { success: false, error: error.message };
+  }
 });
 
 // Save expanded folders for next launch
