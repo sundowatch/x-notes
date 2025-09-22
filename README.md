@@ -126,6 +126,12 @@ Here's a glimpse of XNotes in both light and dark modes.
 
 ## Version History
 
+### Version 0.1.4 (2025-09-22)
+**Bug Fixes & Improvements:**
+- **Bug Fixes**: Various stability and performance improvements
+- **Move New Created Item to Top**: New notes and folders now appear at the top of their parent folder
+- **Create Object Location Enhancement**: More fancy and user-friendly location selector with expandable tree view
+
 ### Version 0.1.3 (2025-09-22)
 **New Features:**
 - **Reordering Fixes**: Improved drag and drop stability and performance
