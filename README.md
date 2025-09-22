@@ -116,15 +116,23 @@ Here's a glimpse of XNotes in both light and dark modes.
 ## Setup Files
 
 ### Linux
-- [xnotes_0.1.2.zip](https://github.com/sundowatch/x-notes/releases/download/xnotes/xnotes_0.1.2.zip) (ZIP Archive)
-- [xnotes_0.1.2_amd64.deb](https://github.com/sundowatch/x-notes/releases/download/xnotes/xnotes_0.1.2_amd64.deb) (Debian Package)
-- [XNotes-0.1.2.AppImage](https://github.com/sundowatch/x-notes/releases/download/xnotes/XNotes-0.1.2.AppImage) (AppImage)
+- [xnotes_0.1.3.zip](https://github.com/sundowatch/x-notes/releases/download/note-tags/xnotes_0.1.3.zip) (ZIP Archive)
+- [xnotes_0.1.3_amd64.deb](https://github.com/sundowatch/x-notes/releases/download/note-tags/xnotes_0.1.3_amd64.deb) (Debian Package)
+- [XNotes-0.1.3.AppImage](https://github.com/sundowatch/x-notes/releases/download/note-tags/XNotes-0.1.3.AppImage) (AppImage)
 
 ### Windows
-- [XNotes_Setup_0.1.2.exe](https://github.com/sundowatch/x-notes/releases/download/xnotes/XNotes_Setup_0.1.2.exe) (Windows Installer)
-- [XNotes 0.1.2.exe](https://github.com/sundowatch/x-notes/releases/download/xnotes/XNotes.0.1.2.exe) (Executable)
+- [XNotes_Setup_0.1.3.exe](https://github.com/sundowatch/x-notes/releases/download/note-tags/XNotes_Setup_0.1.3.exe) (Windows Installer)
+- [XNotes 0.1.3.exe](https://github.com/sundowatch/x-notes/releases/download/note-tags/XNotes.0.1.3.exe) (Executable)
 
 ## Version History
+
+### Version 0.1.3 (2025-09-22)
+**New Features:**
+- **Reordering Fixes**: Improved drag and drop stability and performance
+- **Rounded App Corners**: Modern UI enhancement with rounded window corners
+- **Open Last Note on Startup**: Automatically opens the last edited note when launching the app
+- **Note Tabs**: Enhanced navigation with tabbed interface for multiple open notes
+- **Bug Fixes and Improvements**: Various stability and performance enhancements
 
 ### Version 0.1.2 (2025-09-21)
 **New Features:**
