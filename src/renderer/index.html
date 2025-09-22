@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XNotes</title>
+  <link rel="stylesheet" href="../styles/main.css">
+  <link rel="stylesheet" href="../styles/themes.css">
+  <link rel="stylesheet" href="../styles/vertical-lines.css">
+  <link rel="stylesheet" href="../../node_modules/quill/dist/quill.snow.css">
+  <link rel="stylesheet" href="../../node_modules/highlight.js/styles/github.css" id="hljs-theme">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    // Immediate theme application to prevent flash of wrong theme
+    (function() {
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const os = require('os');
+        const NOTES_DIR = path.join(os.homedir(), 'Documents', 'XNotes');
+        const SETTINGS_FILE = path.join(NOTES_DIR, 'settings.conf');
+        
+        if (fs.existsSync(SETTINGS_FILE)) {
+          const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
+          const settings = JSON.parse(data);
+          
+          if (settings && settings.theme) {
+            document.documentElement.classList.add(`theme-${settings.theme}`);
+            document.body.classList.add(`theme-${settings.theme}`);
+          }
+        }
+      } catch (error) {
+        console.error('Early theme application failed:', error);
+      }
+    })();
+  </script>
+</head>
+<body>
+  <!-- Custom Window Controls -->
+  <div class="titlebar">
+    <div class="titlebar-app">
+      <img src="../../assets/icons/icon.png" class="titlebar-icon" alt="XNotes">
+      <div class="titlebar-text">XNotes</div>
+    </div>
+    <div class="titlebar-controls">
+      <button id="minimize-btn" class="titlebar-btn">
+        <svg width="10" height="1" viewBox="0 0 10 1">
+          <path d="M0 0h10v1H0z" fill="currentColor" />
+        </svg>
+      </button>
+      <button id="maximize-btn" class="titlebar-btn">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M0 0v10h10V0H0zm1 1h8v8H1V1z" fill="currentColor" />
+        </svg>
+      </button>
+      <button id="close-btn" class="titlebar-btn">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <path d="M1 0L0 1l4 4-4 4 1 1 4-4 4 4 1-1-4-4 4-4-1-1-4 4-4-4z" fill="currentColor" />
+        </svg>
+      </button>
+    </div>
+  </div>
+  
+  <!-- Main App Container -->
+  <div class="app-container">
+    <!-- Sidebar Explorer -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h2>Notes</h2>
+        <div class="sidebar-actions">
+          <button id="new-note-btn" title="New Note">
+            <svg width="16" height="16" viewBox="0 0 16 16">
+              <path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="new-folder-btn" title="New Folder">
+            <svg width="16" height="16" viewBox="0 0 16 16">
+              <path d="M14 5V4H7V3H1v11h14V5H14zm0 8H2V4h4v1h8v8z" fill="currentColor" />
+            </svg>
+          </button>
+          <button id="settings-btn" title="Settings">
+            <svg width="16" height="16" viewBox="0 0 16 16">
+              <path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-1a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm6-2.5v1l-1.8.5c-.1.4-.3.7-.5 1l.6 1.7-1 .7-1.4-1.1a3 3 0 0 1-1 0l-1.3 1-1-.6.6-1.7c-.2-.3-.4-.6-.5-1L2 8.5v-1l1.8-.5c.1-.4.3-.7.5-1l-.6-1.7 1-.7L6 4.7c.3 0 .7 0 1 0l1.3-1 1 .6-.6 1.7c.2.3.4.6.5 1l1.8.5z" fill="currentColor" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="explorer" id="explorer">
+        <!-- Notes and folders will be populated here dynamically -->
+      </div>
+    </div>
+
+    <!-- Content Area -->
+    <div class="content">
+      <div class="editor-container">
+        <div class="editor-actions">
+          <span class="note-creation-date" id="note-creation-date"></span>
+          <div id="note-title" class="note-title">Untitled</div>
+          <div style="margin-left: auto;">
+            <button id="save-btn" class="action-btn" title="Save Note">
+              <svg width="16" height="16" viewBox="0 0 16 16">
+                <path d="M13.5 3l-1.5-1.5h-9C2.5 1.5 2 2 2 2.5v11c0 .5.5 1 1 1h10c.5 0 1-.5 1-1v-9.5L13.5 3zM8 12c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3-7H4V3h7v2z" fill="currentColor"/>
+              </svg>
+              Save
+            </button>
+          </div>
+        </div>
+        <div class="editor-toolbar" id="editor-toolbar">
+          <!-- Formatting toolbar will be populated here by Quill -->
+        </div>
+        <div id="editor">
+          <!-- Editor will be initialized here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Settings</h2>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-group">
+          <h3>Appearance</h3>
+          <div class="setting-item">
+            <label for="theme-select">Theme</label>
+            <select id="theme-select">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label for="font-family">Font Family</label>
+            <select id="font-family">
+              <option value="Arial">Arial</option>
+              <option value="Inter">Inter</option>
+              <option value="Helvetica">Helvetica</option>
+              <option value="Times New Roman">Times New Roman</option>
+              <option value="Courier New">Courier New</option>
+              <option value="Verdana">Verdana</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label for="font-size">Font Size</label>
+            <input type="text" id="font-size" value="1rem">
+          </div>
+        </div>
+        <div class="settings-group">
+          <h3>Editor</h3>
+          <div class="setting-item">
+            <label for="auto-save">Auto Save</label>
+            <input type="checkbox" id="auto-save">
+          </div>
+          <div class="setting-item">
+            <label for="show-line-numbers">Show Line Numbers</label>
+            <input type="checkbox" id="show-line-numbers">
+          </div>
+          <div class="setting-item">
+            <label for="show-vertical-lines">Show Vertical Lines</label>
+            <input type="checkbox" id="show-vertical-lines">
+          </div>
+          <div class="setting-item">
+            <label for="auto-indent">Automatic Indentation</label>
+            <input type="checkbox" id="auto-indent">
+          </div>
+          <div class="setting-item">
+            <label for="copy-as-markdown">Copy as Markdown</label>
+            <input type="checkbox" id="copy-as-markdown">
+          </div>
+          <div class="setting-item">
+            <label for="spaces-per-tab">Spaces Per Tab</label>
+            <input type="number" id="spaces-per-tab" min="1" max="8" value="2">
+          </div>
+        </div>
+        
+        <div class="settings-group">
+          <h3>Keyboard Shortcuts</h3>
+          <div class="keyboard-shortcuts">
+            <div class="shortcut-item">
+              <span class="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>S</kbd></span>
+              <span class="shortcut-desc">Save current note</span>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>N</kbd></span>
+              <span class="shortcut-desc">Create new note</span>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-keys"><kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>N</kbd></span>
+              <span class="shortcut-desc">Create new folder</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-settings-btn" class="primary-btn">Save</button>
+        <button class="close-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Note/Folder Modal -->
+  <div id="create-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="create-modal-title">New Note</h2>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-item">
+          <label for="create-name">Name</label>
+          <input type="text" id="create-name">
+        </div>
+        <div class="setting-item">
+          <label for="create-location">Location</label>
+          <select id="create-location"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="create-btn" class="primary-btn">Create</button>
+        <button class="close-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div id="context-menu" class="context-menu">
+    <div class="context-menu-header">
+      <span id="context-item-name">Item</span>
+      <span id="context-item-type">folder</span>
+    </div>
+    <ul class="context-menu-list">
+      <li id="ctx-new-note" class="context-menu-item">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" />
+        </svg>
+        <span>New Note</span>
+      </li>
+      <li id="ctx-new-folder" class="context-menu-item">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z" />
+        </svg>
+        <span>New Folder</span>
+      </li>
+      <li class="context-menu-divider"></li>
+      <li id="ctx-rename" class="context-menu-item">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z" />
+        </svg>
+        <span>Rename</span>
+      </li>
+      <li id="ctx-duplicate" class="context-menu-item">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" />
+        </svg>
+        <span>Duplicate</span>
+      </li>
+      <li id="ctx-delete" class="context-menu-item danger">
+        <svg class="context-menu-icon" viewBox="0 0 24 24">
+          <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z" />
+        </svg>
+        <span>Delete</span>
+      </li>
+      <li class="context-menu-divider"></li>
+      <li class="context-menu-item color-section">
+        <span class="color-section-title">Colors</span>
+        <div class="color-picker">
+          <div class="color-option default" data-color="default" title="Default"></div>
+          <div class="color-option primary" data-color="primary" title="Primary Blue"></div>
+          <div class="color-option success" data-color="success" title="Success Green"></div>
+          <div class="color-option warning" data-color="warning" title="Warning Yellow"></div>
+          <div class="color-option danger" data-color="danger" title="Danger Red"></div>
+          <div class="color-option info" data-color="info" title="Info Cyan"></div>
+          <div class="color-option purple" data-color="purple" title="Purple"></div>
+          <div class="color-option orange" data-color="orange" title="Orange"></div>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <!-- Scripts -->
+  <script src="../../node_modules/quill/dist/quill.min.js"></script>
+  <script src="../../node_modules/highlight.js/highlight.min.js"></script>
+  <script src="../../node_modules/marked/marked.min.js"></script>
+  <script src="./simple-test.js"></script>
+  <!-- <script src="./renderer.js"></script> -->
+  <!-- <script src="./test.js"></script> -->
+</body>
+</html>

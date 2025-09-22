@@ -1,0 +1,102 @@
+/* checkbox.css */
+/* Onay kutuları için stil tanımları */
+
+/* Onay kutusu bloğu */
+.checkbox-blot {
+  display: block;
+  margin: 5px 0;
+  position: relative;
+}
+
+/* Onay kutusu container */
+.checkbox-container {
+  display: flex;
+  align-items: flex-start;
+}
+
+/* Onay kutusu gösterimi */
+.checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  border: 1px solid #aaa;
+  border-radius: 3px;
+  margin-right: 8px;
+  margin-top: 3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #fff;
+  font-weight: bold;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* Işaretlenmemiş onay kutusu */
+.checkbox.unchecked {
+  background-color: #fff;
+}
+
+/* Işaretlenmiş onay kutusu */
+.checkbox.checked {
+  background-color: #0078d7;
+  border-color: #0078d7;
+}
+
+/* Hover efektleri */
+.checkbox.unchecked:hover {
+  background-color: #f0f0f0;
+  border-color: #666;
+}
+
+.checkbox.checked:hover {
+  background-color: #006cc1;
+}
+
+/* İçerik kısmı */
+.checkbox-content {
+  flex: 1;
+  min-height: 20px;
+}
+
+/* İşaretli öğelerin stili */
+.checkbox.checked + .checkbox-content {
+  text-decoration: line-through;
+  color: #777;
+}
+
+/* Karanlık temada onay kutuları */
+.theme-dark .checkbox.unchecked {
+  background-color: #333;
+  border-color: #666;
+}
+
+.theme-dark .checkbox.checked {
+  background-color: #0078d7;
+  border-color: #0078d7;
+}
+
+.theme-dark .checkbox.unchecked:hover {
+  background-color: #444;
+  border-color: #999;
+}
+
+/* Checkbox butonu araç çubuğundaki icon */
+.ql-checkbox {
+  position: relative;
+}
+
+.ql-checkbox:after {
+  content: "☑";
+  font-size: 14px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

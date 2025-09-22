@@ -1,0 +1,203 @@
+/* Light Theme */
+body.theme-light {
+  --background-color: #ffffff;
+  --text-color: #333333;
+  --border-color: #e1e1e1;
+  --hover-color: #f5f5f5;
+  --active-color: #e8f0fe;
+  --accent-color: #0078d7;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+}
+
+body.theme-light .ql-syntax {
+  background-color: #f8f8f8;
+  color: #333333;
+}
+
+/* Dark Theme */
+body.theme-dark {
+  --background-color: #191919FF;
+  --text-color: #e0e0e0;
+  --border-color: #444444;
+  --hover-color: #2a2a2a;
+  --active-color: #3a3a3a;
+  --accent-color: #0078d7;
+  --shadow-color: rgba(0, 0, 0, 0.4);
+}
+
+body.theme-dark .ql-toolbar {
+  background-color: #252525;
+}
+
+body.theme-dark .ql-toolbar button {
+  color: #e0e0e0;
+}
+
+body.theme-dark .ql-toolbar .ql-picker {
+  color: #e0e0e0;
+}
+
+body.theme-dark .ql-toolbar .ql-picker-options {
+  background-color: #252525;
+}
+
+body.theme-dark .ql-toolbar button.ql-active,
+body.theme-dark .ql-toolbar .ql-picker-label.ql-active {
+  color: var(--accent-color);
+}
+
+body.theme-dark .ql-syntax {
+  background-color: #2d2d2d;
+  color: #e0e0e0;
+}
+
+body.theme-dark input,
+body.theme-dark select,
+body.theme-dark textarea {
+  background-color: #2d2d2d;
+  color: #e0e0e0;
+  border-color: #444444;
+}
+
+/* Button styling overrides for dark mode */
+body.theme-dark .ql-toolbar {
+  background-color: #2d2d2d;
+}
+
+body.theme-dark .ql-toolbar button {
+  color: #ffffff !important;
+}
+
+body.theme-dark .ql-toolbar button svg {
+  fill: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+body.theme-dark .ql-toolbar button.ql-active,
+body.theme-dark .ql-toolbar .ql-picker-label.ql-active {
+  color: var(--accent-color) !important;
+  background-color: #3a3a3a !important;
+}
+
+body.theme-dark .ql-toolbar button.ql-active svg {
+  fill: var(--accent-color) !important;
+  stroke: var(--accent-color) !important;
+}
+
+body.theme-dark .ql-picker-label {
+  color: #ffffff !important;
+}
+
+body.theme-dark .ql-picker-options {
+  background-color: #2d2d2d !important;
+}
+
+body.theme-dark .ql-picker-item {
+  color: #ffffff !important;
+}
+
+/* Scrollbars */
+body.theme-dark ::-webkit-scrollbar-thumb {
+  background-color: #555555;
+}
+
+body.theme-dark ::-webkit-scrollbar-thumb:hover {
+  background-color: #666666;
+}
+
+body.theme-dark .ql-toolbar .ql-formats svg * {
+  stroke: #ffffff !important;
+}
+
+body.theme-dark .ql-toolbar {
+  border: 0 !important;
+}
+
+/* SVG Icon Colors for Light Theme */
+body.theme-light .folder-icon {
+  color: #57b2e0; /* Default folder color for light theme */
+}
+
+body.theme-light .file-icon {
+  color: #1976d2; /* Darker blue for light theme */
+}
+
+/* SVG Icon Colors for Dark Theme */
+body.theme-dark .folder-icon {
+  color: #57b2e0; /* Default folder color for dark theme */
+}
+
+body.theme-dark .file-icon {
+  color: #64b5f6; /* Light blue for dark theme */
+}
+
+/* Color classes for folder customization */
+.folder-icon.color-primary {
+  color: #007bff !important;
+}
+
+.folder-icon.color-success {
+  color: #28a745 !important;
+}
+
+.folder-icon.color-warning {
+  color: #ffc107 !important;
+}
+
+.folder-icon.color-danger {
+  color: #dc3545 !important;
+}
+
+.folder-icon.color-info {
+  color: #17a2b8 !important;
+}
+
+.folder-icon.color-purple {
+  color: #6f42c1 !important;
+}
+
+.folder-icon.color-orange {
+  color: #fd7e14 !important;
+}
+
+.folder-icon.color-default {
+  color: #57b2e0 !important;
+}
+
+/* Color classes for note customization */
+.file-icon.color-primary {
+  color: #007bff !important;
+}
+
+.file-icon.color-success {
+  color: #28a745 !important;
+}
+
+.file-icon.color-warning {
+  color: #ffc107 !important;
+}
+
+.file-icon.color-danger {
+  color: #dc3545 !important;
+}
+
+.file-icon.color-info {
+  color: #17a2b8 !important;
+}
+
+.file-icon.color-purple {
+  color: #6f42c1 !important;
+}
+
+.file-icon.color-orange {
+  color: #fd7e14 !important;
+}
+
+.file-icon.color-default {
+  color: #1976d2 !important; /* Light theme default */
+}
+
+/* Dark theme overrides for file icons */
+body.theme-dark .file-icon.color-default {
+  color: #64b5f6 !important; /* Dark theme default */
+}
